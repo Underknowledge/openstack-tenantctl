@@ -88,7 +88,9 @@ class TestLoadAndFilterProjects:
 
     def test_loads_all_projects_when_no_filter(self, mock_config_dir: Path) -> None:
         """Should load all projects when no filter is specified."""
-        projects, all_projects, defaults = _load_and_filter_projects(str(mock_config_dir), None)
+        projects, all_projects, defaults = _load_and_filter_projects(
+            str(mock_config_dir), None
+        )
 
         assert len(projects) == 2
         assert len(all_projects) == 2
@@ -109,7 +111,9 @@ class TestLoadAndFilterProjects:
         assert projects[0].name == "project1"
         assert len(all_projects) == 2  # all_projects should still contain both
 
-    def test_raises_when_filtered_project_not_found(self, mock_config_dir: Path) -> None:
+    def test_raises_when_filtered_project_not_found(
+        self, mock_config_dir: Path
+    ) -> None:
         """Should raise ProvisionerError when filtered project doesn't exist."""
         with pytest.raises(ProvisionerError, match="project 'nonexistent' not found"):
             _load_and_filter_projects(str(mock_config_dir), "nonexistent")
@@ -239,7 +243,9 @@ class TestResolveFederationContext:
     def test_handles_mapping_not_found(self, mock_config_dir: Path) -> None:
         """Should handle NotFoundException when mapping doesn't exist yet."""
         mock_conn = Mock()
-        mock_conn.identity.get_mapping.side_effect = openstack.exceptions.NotFoundException
+        mock_conn.identity.get_mapping.side_effect = (
+            openstack.exceptions.NotFoundException
+        )
 
         defaults = {"federation": {"mapping_id": "new-mapping"}}
         all_projects: list[ProjectConfig] = []
@@ -283,7 +289,9 @@ class TestResolveFederationContext:
     def test_loads_static_rules(self, mock_config_dir: Path) -> None:
         """Should load static federation rules from JSON file."""
         mock_conn = Mock()
-        mock_conn.identity.get_mapping.side_effect = openstack.exceptions.NotFoundException
+        mock_conn.identity.get_mapping.side_effect = (
+            openstack.exceptions.NotFoundException
+        )
 
         # Add static rules to the file
         static_path = mock_config_dir / "federation_static.json"
@@ -318,7 +326,9 @@ class TestResolveFederationContext:
         # Should not call get_mapping when no mapping_id is found
         mock_conn.identity.get_mapping.assert_not_called()
 
-    def test_skips_projects_without_federation_config(self, mock_config_dir: Path) -> None:
+    def test_skips_projects_without_federation_config(
+        self, mock_config_dir: Path
+    ) -> None:
         """Should skip projects that have federation=None when searching for mapping_id."""
         mock_conn = Mock()
         mock_mapping = Mock()
@@ -344,7 +354,9 @@ class TestResolveFederationContext:
         assert mapping_exists is True
         mock_conn.identity.get_mapping.assert_called_once_with("found-mapping")
 
-    def test_uses_first_project_mapping_id_when_multiple_exist(self, mock_config_dir: Path) -> None:
+    def test_uses_first_project_mapping_id_when_multiple_exist(
+        self, mock_config_dir: Path
+    ) -> None:
         """Should use first project's mapping_id when multiple projects have federation config."""
         mock_conn = Mock()
         mock_mapping = Mock()
@@ -369,7 +381,9 @@ class TestResolveFederationContext:
             ),
         ]
 
-        _resolve_federation_context(mock_conn, str(mock_config_dir), defaults, all_projects)
+        _resolve_federation_context(
+            mock_conn, str(mock_config_dir), defaults, all_projects
+        )
 
         # Should only call with the first mapping_id found
         mock_conn.identity.get_mapping.assert_called_once_with("first-mapping")
@@ -464,7 +478,9 @@ class TestSetupContext:
         assert ctx.external_network_map == net_map
         assert ctx.current_mapping_rules == [{"local": [], "remote": []}]
         assert ctx.mapping_exists is True
-        assert ctx.static_mapping_rules == [{"local": [{"user": {"name": "static"}}], "remote": []}]
+        assert ctx.static_mapping_rules == [
+            {"local": [{"user": {"name": "static"}}], "remote": []}
+        ]
         # Verify connection was established
         mock_connect.assert_called_once_with(cloud=None)
         # Verify both resolution functions were called
@@ -500,7 +516,9 @@ class TestSetupContext:
         mock_connect.assert_called_once_with(cloud="mycloud")
 
     @patch("src.main._connect")
-    def test_exits_when_connection_fails(self, mock_connect: Mock, mock_config_dir: Path) -> None:
+    def test_exits_when_connection_fails(
+        self, mock_connect: Mock, mock_config_dir: Path
+    ) -> None:
         """Should raise ProvisionerError when OpenStack connection fails."""
         mock_connect.side_effect = Exception("Connection failed")
 
@@ -637,7 +655,9 @@ class TestPrintSummary:
         captured = capsys.readouterr()
         assert "2 created, 1 updated, 0 deleted, 1 skipped, 1 failed" in captured.out
 
-    def test_returns_1_when_projects_failed(self, capsys: pytest.CaptureFixture) -> None:
+    def test_returns_1_when_projects_failed(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         """Should return exit code 1 when any projects failed."""
         ctx = SharedContext(conn=Mock(), dry_run=False)
         ctx.failed_projects.append("project1")
@@ -811,7 +831,9 @@ class TestMainIntegration:
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
-        exit_code = main(["--config-dir", str(mock_config_dir), "--dry-run", "--project", "proj1"])
+        exit_code = main(
+            ["--config-dir", str(mock_config_dir), "--dry-run", "--project", "proj1"]
+        )
 
         assert exit_code == 0
         # Verify reconcile was called with ONLY the filtered project

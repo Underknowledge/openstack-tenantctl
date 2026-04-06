@@ -195,7 +195,9 @@ def _persist_fips(
     if ctx.state_store is None:
         msg = "state_store is None — cannot persist FIPs"
         raise DryRunUnsupportedError(msg)
-    ctx.state_store.save(cfg.state_key, ["preallocated_fips"], [f.to_dict() for f in fips])
+    ctx.state_store.save(
+        cfg.state_key, ["preallocated_fips"], [f.to_dict() for f in fips]
+    )
     logger.info("Persisted %d FIP(s) to state for project %s", len(fips), cfg.name)
 
 
@@ -279,7 +281,9 @@ def _persist_released_fips(
     if ctx.state_store is None:
         msg = "state_store is None — cannot persist released FIPs"
         raise DryRunUnsupportedError(msg)
-    ctx.state_store.save(cfg.state_key, ["released_fips"], [r.to_dict() for r in released])
+    ctx.state_store.save(
+        cfg.state_key, ["released_fips"], [r.to_dict() for r in released]
+    )
     logger.info(
         "Persisted %d released FIP(s) to state for project %s",
         len(released),
@@ -371,7 +375,9 @@ def _reconcile_fip_drift(
 
     if reclaim_enabled:
         # Raise quota to allow reclamation.
-        desired_count: int = cfg.quotas.network.get("floating_ips", 0) if cfg.quotas else 0
+        desired_count: int = (
+            cfg.quotas.network.get("floating_ips", 0) if cfg.quotas else 0
+        )
         _raise_fip_quota(ctx.conn, project_id, desired_count + len(missing))
 
         for entry in missing:
@@ -564,14 +570,18 @@ def _scale_up_fips(
 
     # Raise quota to allow allocation.
     _raise_fip_quota(ctx.conn, project_id, desired_count)
-    logger.info("Raised floating_ips quota to %d for project %s", desired_count, project_id)
+    logger.info(
+        "Raised floating_ips quota to %d for project %s", desired_count, project_id
+    )
 
     # Allocate the missing FIPs.
     actions: list[Action] = []
     new_fips: list[FipEntry] = []
 
     for idx in range(to_allocate):
-        fip = _create_floating_ip(ctx.conn, external_net_id, project_id, external_subnet_id)
+        fip = _create_floating_ip(
+            ctx.conn, external_net_id, project_id, external_subnet_id
+        )
         logger.info(
             "Allocated FIP %s (%s) for project %s [%d/%d]",
             fip.floating_ip_address,
@@ -685,7 +695,9 @@ def ensure_preallocated_fips(
     # If a router already exists on a different external network (or a
     # different subnet within the same network), allocate FIPs there
     # instead — the router won't reach FIPs on another network/subnet.
-    router_ext_net_id, router_ext_subnet_id = _detect_router_gateway(ctx.conn, project_id)
+    router_ext_net_id, router_ext_subnet_id = _detect_router_gateway(
+        ctx.conn, project_id
+    )
     if router_ext_net_id and router_ext_net_id != external_net_id:
         logger.warning(
             "Project %s router uses external network %s, "
@@ -730,7 +742,9 @@ def ensure_preallocated_fips(
 
     foreign_actions: list[Action] = []
     if foreign_fips:
-        foreign_nets = {getattr(f, "floating_network_id", "unknown") for f in foreign_fips}
+        foreign_nets = {
+            getattr(f, "floating_network_id", "unknown") for f in foreign_fips
+        }
         logger.warning(
             "Project %s has %d FIP(s) from foreign external network(s) %s "
             "(configured: %s) — these will not be managed",
