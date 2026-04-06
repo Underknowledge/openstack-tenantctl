@@ -1,0 +1,226 @@
+# OpenStack TenantCtl .gitattributes
+#
+# This file defines attributes for path names to ensure consistent
+# behavior across different platforms and Git configurations.
+
+# ============================================================================
+# Auto-detect text files and normalize line endings to LF
+# ============================================================================
+* text=auto eol=lf
+
+# ============================================================================
+# Source Code
+# ============================================================================
+
+# Python files
+*.py text eol=lf diff=python
+*.pyx text eol=lf diff=python
+*.pyi text eol=lf diff=python
+
+# Configuration files
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+*.conf text eol=lf
+
+# ============================================================================
+# Documentation
+# ============================================================================
+
+# Markdown
+*.md text eol=lf diff=markdown
+
+# reStructuredText
+*.rst text eol=lf
+
+# Plain text
+*.txt text eol=lf
+AUTHORS text eol=lf
+CHANGELOG text eol=lf
+CHANGES text eol=lf
+CONTRIBUTING text eol=lf
+COPYING text eol=lf
+COPYRIGHT text eol=lf
+INSTALL text eol=lf
+LICENSE text eol=lf
+NEWS text eol=lf
+README text eol=lf
+TODO text eol=lf
+
+# ============================================================================
+# Build and Development
+# ============================================================================
+
+# Makefiles - MUST use tabs
+Makefile text eol=lf
+*.mk text eol=lf
+*.make text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+*.fish text eol=lf
+
+# Batch scripts (Windows)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ============================================================================
+# Git Configuration
+# ============================================================================
+
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.gitmodules text eol=lf
+.gitkeep text eol=lf
+
+# ============================================================================
+# CI/CD
+# ============================================================================
+
+# GitHub Actions
+.github/**/*.yml text eol=lf
+.github/**/*.yaml text eol=lf
+
+# GitLab CI
+.gitlab-ci.yml text eol=lf
+
+# Other CI
+*.travis.yml text eol=lf
+appveyor.yml text eol=lf
+.circleci/config.yml text eol=lf
+
+# ============================================================================
+# Data Files
+# ============================================================================
+
+# CSV
+*.csv text eol=lf
+
+# TSV
+*.tsv text eol=lf
+
+# SQL
+*.sql text eol=lf
+
+# ============================================================================
+# Binary Files (explicitly marked)
+# ============================================================================
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.webp binary
+*.bmp binary
+*.tiff binary
+
+# Archives
+*.zip binary
+*.tar binary
+*.gz binary
+*.bz2 binary
+*.xz binary
+*.7z binary
+*.rar binary
+
+# Executables
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# Python compiled
+*.pyc binary
+*.pyo binary
+*.pyd binary
+
+# Fonts
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+
+# PDF
+*.pdf binary
+
+# ============================================================================
+# Diff Configuration
+# ============================================================================
+
+# Python: Use python diff driver for better diffs
+*.py diff=python
+
+# JSON: Pretty print JSON in diffs
+*.json diff=json
+
+# ============================================================================
+# Merge Configuration
+# ============================================================================
+
+# Never try to merge binary files
+*.png merge=binary
+*.jpg merge=binary
+*.jpeg merge=binary
+*.gif merge=binary
+*.pdf merge=binary
+*.zip merge=binary
+*.tar merge=binary
+*.gz merge=binary
+
+# ============================================================================
+# Linguist Configuration (GitHub language detection)
+# ============================================================================
+
+# Documentation should not count toward language statistics
+docs/** linguist-documentation
+*.md linguist-documentation
+
+# Mark test files
+tests/** linguist-generated=false
+
+# Vendored/generated code (if any in the future)
+# vendor/** linguist-vendored
+
+# ============================================================================
+# Export-ignore (files to exclude from git archive)
+# ============================================================================
+
+# Development files not needed in releases
+.gitattributes export-ignore
+.gitignore export-ignore
+.github export-ignore
+tests/ export-ignore
+.pytest_cache export-ignore
+.mypy_cache export-ignore
+.ruff_cache export-ignore
+
+# Development documentation
+docs/CONTRIBUTING.md export-ignore
+CONTRIBUTING.md export-ignore
+.editorconfig export-ignore
+
+# ============================================================================
+# Line Ending Handling for Specific Files
+# ============================================================================
+
+# Ensure consistent line endings for project-specific files
+config/defaults.yaml text eol=lf
+config/projects/*.yaml text eol=lf
+config/federation_static.json text eol=lf
+
+# Python source
+src/**/*.py text eol=lf diff=python
+tests/**/*.py text eol=lf diff=python
+
+# Documentation
+docs/**/*.md text eol=lf diff=markdown

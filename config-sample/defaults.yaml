@@ -1,0 +1,137 @@
+description: "Managed by tenantctl"
+# enabled: default true - Set to false to skip provisioning without removing the config file
+enabled: true
+# state: default "present" - Lifecycle: present (provision), locked (freeze + shelve instances), absent (teardown)
+state: present
+# domain_id: OpenStack domain for project creation. Set to null (or omit) to auto-detect
+# from OS_PROJECT_DOMAIN_ID or OS_USER_DOMAIN_NAME env vars. Set a string to override.
+# domain_id: "my-domain"
+domain_id: null
+
+# reclaim_floating_ips: default false
+# When a preallocated FIP disappears from OpenStack:
+#   true  → try to re-allocate the exact same IP address (409 if already taken elsewhere)
+#   false → silently release the IP and let normal scale-up allocate a new (different) one, log to file
+reclaim_floating_ips: false
+# reclaim_router_ips: default false
+# Controls router external-IP recovery when a project's network stack is
+# recreated (e.g. after teardown + re-provision of an empty project).
+#
+# How it works:
+#   The provisioner tracks every router's external IP in config/state/.
+#   When reclaim is enabled and the stack is recreated, it asks Neutron
+#   for the exact same IP via external_fixed_ips.  If the IP is still
+#   free the router keeps its old address; if another tenant grabbed it
+#   (409 Conflict) the router falls back to a normal pool allocation and
+#   the lost IP is recorded in released_router_ips for auditing.
+#
+# Why you'd enable it:
+#   The router's external IP is the SNAT address for all outbound traffic
+#   and may appear in partner firewall allowlists, DNS PTR records, or
+#   VPN peer configurations.  Losing it silently can break connectivity.
+#
+#   true  → attempt to reclaim the previous external IP on stack recreation
+#   false → let Neutron assign a fresh IP from the allocation pool
+#
+# Safety: reclaim only fires during *new* stack creation (no existing
+# network in the project).  It never touches an already-running router.
+reclaim_router_ips: false
+# track_fip_changes: default false
+# When true, tenantctl persists FIP state on every run even when the count hasn't changed.
+# Detects when users swap FIPs (release + allocate) and writes a tracking snapshot
+# with timestamp, quota, and allocated count — useful for NFS export services or
+# any system that needs to track floating IP address changes.
+track_fip_changes: false
+# enforce_unique_cidrs: default false - Safety guard: when true, tenantctl refuses to run if any two
+# projects share overlapping subnets (e.g. both using 10.0.0.0/24). Checked at config load time.
+enforce_unique_cidrs: false
+
+network:
+  # mtu: default 0 (let Neutron provide you its default).
+  mtu: 0
+  subnet:
+    dns_nameservers:
+      - 9.9.9.9
+    # dhcp: default true - Enable DHCP on the subnet (alias: enable_dhcp)
+    dhcp: true
+    # cidr: default subnet for all projects. Override per-project in the project file
+    # (see prod.yaml). Leave empty to skip subnet creation.
+    cidr: 10.0.0.0/24
+
+quotas:
+  compute:
+    cores: 1
+    # Choose ONE of the two RAM options below  not both.
+    # Setting both is allowed only when they resolve to the same MiB value;
+    # mismatched values will cause a validation error.
+    #   ram: "1 GiB"     # unit-string syntax support (1 GiB = 1024 MiB; GiB ≠ GB)
+    ram_gibibytes: 1     # convenience: plain integer in GiB — same as ram: "1 GiB"
+    instances: 30
+  network:
+    # Neutron (network) quotas
+    floating_ips: 1
+    networks: 1
+    subnets: 1
+    routers: 1
+    ports: 50
+    security_groups: 10
+    security_group_rules: 100
+    # Octavia (load balancer) quotas — listed under network for convenience.
+    # Safe to include even without Octavia: tenantctl skips gracefully when the service is unavailable.
+    load_balancers: 0
+  block_storage:
+    gigabytes: 500
+    volumes: 20
+    snapshots: 10
+
+# Omit this section when you don't want tenantctl to manage security group rules
+security_group:
+  name: default
+  rules:
+    - direction: ingress
+      protocol: icmp
+      remote_ip_prefix: "0.0.0.0/0"
+      description: "Allow ICMP"
+    - direction: ingress
+      protocol: tcp
+      port_range_min: 2222
+      port_range_max: 2222
+      remote_ip_prefix: "0.0.0.0/0"
+      description: "Allow alt SSH"
+
+federation:
+  issuer: "https://myidp.corp/realms/myrealm"
+  mapping_id: "my-mapping"
+  group_prefix: "/services/openstack/"
+  role_assignments:
+    - idp_group: member
+      roles:
+        - member
+        - load-balancer_member
+    - idp_group: reader
+      roles:
+        - reader
+
+# group_role_assignments: Grant Keystone group roles directly to every project (e.g., domain-admin access)
+# Groups and roles must already exist in Keystone - tenantctl will NOT create them.
+# Set state: absent to revoke instead of grant.
+# group_role_assignments:
+#   - group: "my-admin-group"
+#     roles:
+#       - admin
+#   - group: "my-support-group"
+#     roles:
+#       - reader
+
+# External network configuration for router gateways and floating IPs
+# external_network_name: "public"      # Name or UUID; auto-discovered if omitted
+# external_network_subnet: "external0" # Name or UUID; auto-selected if omitted
+#
+# When to set external_network_subnet:
+# - Your external network has multiple subnets with different IP ranges
+# - You need routers and FIPs allocated from the same subnet for routing to work
+# - Without this, OpenStack may allocate them from different subnets, breaking connectivity
+#
+# To find available subnets: openstack subnet list --network <external-network-name>
+# See docs/USER-GUIDE.md for troubleshooting "Multiple external subnets found" warnings
+

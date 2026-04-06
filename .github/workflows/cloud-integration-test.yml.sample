@@ -1,0 +1,71 @@
+# Sample to enforces desired state on a OpenStack cloud.
+# Runs on every push to main (apply config changes) and nightly (detect drift).
+#
+# REQUIRED SECRETS:
+#   OS_AUTH_URL, OS_USERNAME, OS_PASSWORD, OS_PROJECT_NAME,
+#   OS_PROJECT_DOMAIN_NAME, OS_USER_DOMAIN_NAME, OS_REGION_NAME
+
+name: Enforce Cloud State
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 */3 * * *" # every 3 hours
+  workflow_dispatch:
+
+# Never cancel mid-provision; queued runs apply the latest config after.
+concurrency:
+  group: cloud-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OS_AUTH_URL: ${{ secrets.OS_AUTH_URL }}
+      OS_USERNAME: ${{ secrets.OS_USERNAME }}
+      OS_PASSWORD: ${{ secrets.OS_PASSWORD }}
+      OS_PROJECT_NAME: ${{ secrets.OS_PROJECT_NAME }}
+      OS_PROJECT_DOMAIN_NAME: ${{ secrets.OS_PROJECT_DOMAIN_NAME }}
+      OS_USER_DOMAIN_NAME: ${{ secrets.OS_USER_DOMAIN_NAME }}
+      OS_REGION_NAME: ${{ secrets.OS_REGION_NAME }}
+      OS_IDENTITY_API_VERSION: "3"
+      OS_INTERFACE: public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e . python-openstackclient
+
+      - name: Verify connectivity
+        run: openstack token issue
+
+      - run: mkdir -p logs
+
+      - name: Provision
+        run: |
+          tenantctl \
+            --config-dir config \
+            -v 2>&1 | tee logs/provision.log
+
+      - name: Idempotency check
+        run: |
+          tenantctl \
+            --config-dir config \
+            -v 2>&1 | tee logs/idempotency.log
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: provision-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 14

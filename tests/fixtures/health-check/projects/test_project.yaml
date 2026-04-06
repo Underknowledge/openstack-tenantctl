@@ -1,0 +1,22 @@
+name: test_project
+resource_prefix: test
+description: "Test project for health check validation"
+
+network:
+  subnet:
+    cidr: 192.168.100.0/24
+    gateway_ip: 192.168.100.254
+    allocation_pools:
+      - start: 192.168.100.1
+        end: 192.168.100.253
+
+quotas:
+  compute:
+    cores: 16
+    ram: 32768
+    instances: 10
+  network:
+    floating_ips: 2
+  block_storage:
+    gigabytes: 500
+    volumes: 20
