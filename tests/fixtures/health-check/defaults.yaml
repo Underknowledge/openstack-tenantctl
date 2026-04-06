@@ -1,0 +1,38 @@
+description: "Test defaults for health check"
+enabled: true
+reclaim_floating_ips: false
+
+network:
+  mtu: 1500
+  subnet:
+    dns_nameservers:
+      - 8.8.8.8
+    dhcp: true
+    cidr: 10.0.0.0/24
+
+quotas:
+  compute:
+    cores: 1
+    ram: 1024
+    instances: 10
+  network:
+    floating_ips: 1
+    networks: 1
+    subnets: 1
+    routers: 1
+    ports: 50
+    security_groups: 10
+    security_group_rules: 100
+    load_balancers: 0
+  block_storage:
+    gigabytes: 100
+    volumes: 10
+    snapshots: 5
+
+security_group:
+  name: default
+  rules:
+    - direction: ingress
+      protocol: icmp
+      remote_ip_prefix: "0.0.0.0/0"
+      description: "Allow ICMP"

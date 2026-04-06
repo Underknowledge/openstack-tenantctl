@@ -1,0 +1,54 @@
+name: prod
+resource_prefix: prod
+description: "Production environment"
+
+# Per-project overrides — anything set here wins over defaults.yaml.
+# Keys you don't set here are inherited from defaults.
+
+# reclaim_floating_ips: override the default for this project only.
+# Recommended true for production to keep stable public IPs.
+reclaim_floating_ips: true
+# reclaim_router_ips: override the default (false) for this project.
+# The router's external IP is the SNAT source for all outbound traffic.
+# If the network stack is ever torn down and recreated, enabling this
+# makes the provisioner request the same IP back from Neutron so that
+# firewall allowlists, DNS PTR records, and VPN peers keep working.
+# Falls back to a fresh IP automatically if the old one is already taken.
+reclaim_router_ips: true
+# track_fip_changes: override the default (false) for this project.
+# When users swap FIPs (release one, allocate a new one) without changing the
+# total count, the provisioner writes the updated FIP list and a tracking
+# snapshot (timestamp, quota, allocated count) to the state file.  Useful for
+# NFS export services or any system that needs to track FIP address changes.
+track_fip_changes: true
+
+# state: override lifecycle per project (present / locked / absent)
+# state: locked
+
+# Optional: Override external network/subnet for this specific project
+# If omitted, uses values from defaults.yaml
+# external_network_name: "public"
+# external_network_subnet: "external1"  # Use a different subnet than the default
+
+network:
+  # mtu: override per-project. Physical MTU minus overlay overhead (VXLAN ~50, Geneve ~58).
+  # Only set above 1450 if the physical fabric supports jumbo frames end-to-end.
+  # mtu: 8950
+  subnet:
+    cidr: 192.168.20.0/24
+    gateway_ip: 192.168.20.254
+    allocation_pools:
+      - start: 192.168.20.1
+        end: 192.168.20.253
+
+quotas:
+  compute:
+    cores: 64
+    ram_gibibytes: 128  # 128 GiB = 131072 MiB (same as ram: 131072)
+    instances: 30
+  network:
+    floating_ips: 2
+    networks: 2
+  block_storage:
+    gigabytes: 2000
+    volumes: 50

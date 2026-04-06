@@ -1,0 +1,51 @@
+# Ignore all hidden files/dirs, then whitelist what we track
+.*
+!.gitignore
+!.gitattributes
+!.editorconfig
+!.bumpversion.toml
+!.github/
+!.github/**
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Packaging
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# Virtual environments
+venv/
+env/
+
+# Test / coverage
+htmlcov/
+coverage.xml
+
+# OS junk
+Thumbs.db
+
+# Credentials (clouds.yaml, openrc.sh, etc.)
+clouds.yaml
+secure.yaml
+*.sh
+
+# Lock files (state store)
+*.lock
+
+# Logs
+*.log
+
+# Config directory (real configs contain secrets, only sample is tracked)
+config/
+
+# Personal notes
+TODO.md
+NOTES.md
+
+# Bandit output
+bandit-report.json

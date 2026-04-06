@@ -1,0 +1,29 @@
+# name: required - OpenStack project name. Must start with a letter, max 64 chars.
+# Allowed: letters, digits, spaces, hyphens, underscores.
+name: dev
+# resource_prefix: required - lowercase prefix for all created resources (network, router, etc.)
+# Must match ^[a-z0-9]+$ — no hyphens, no underscores.
+resource_prefix: dev
+description: "Development environment"
+
+network:
+  subnet:
+    cidr: 192.168.30.0/24
+    # gateway_ip: auto-calculated as first usable IP in CIDR (here: 192.168.30.1) when omitted.
+    # Set explicitly to place the gateway elsewhere (e.g. last usable IP).
+    gateway_ip: 192.168.30.254
+    # allocation_pools: auto-calculated as all usable IPs minus gateway when omitted.
+    # Set explicitly to restrict the DHCP range.
+    allocation_pools:
+      - start: 192.168.30.1
+        end: 192.168.30.253
+
+quotas:
+  compute:
+    cores: 16
+    ram_gibibytes: 32
+    instances: 10
+  network:
+    floating_ips: 1
+  block_storage:
+    gigabytes: 500
