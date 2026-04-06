@@ -120,7 +120,9 @@ class TestRetryExhaustion:
         def limited_func(m: MagicMock) -> str:
             return m()
 
-        with pytest.raises(openstack.exceptions.HttpException, match="Service Unavailable"):
+        with pytest.raises(
+            openstack.exceptions.HttpException, match="Service Unavailable"
+        ):
             limited_func(mock)
         assert mock.call_count == 3
 

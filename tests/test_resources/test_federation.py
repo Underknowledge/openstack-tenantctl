@@ -74,13 +74,17 @@ class TestEnsureFederationMapping:
         member_roles = member_rule["local"][1]["projects"][0]["roles"]
         assert member_roles == [{"name": "member"}, {"name": "load-balancer_member"}]
         assert member_rule["local"][1]["projects"][0]["name"] == "test_project"
-        assert member_rule["remote"][3]["any_one_of"] == ["/services/openstack/test_project/member"]
+        assert member_rule["remote"][3]["any_one_of"] == [
+            "/services/openstack/test_project/member"
+        ]
 
         # Second rule: reader group grants reader
         reader_rule = rules[1]
         reader_roles = reader_rule["local"][1]["projects"][0]["roles"]
         assert reader_roles == [{"name": "reader"}]
-        assert reader_rule["remote"][3]["any_one_of"] == ["/services/openstack/test_project/reader"]
+        assert reader_rule["remote"][3]["any_one_of"] == [
+            "/services/openstack/test_project/reader"
+        ]
 
     def test_skip_when_rules_match(
         self,
@@ -218,13 +222,21 @@ class TestRuleSorting:
         # Verify sorting: alpha_project comes before zulu_project
         assert len(rules) == 4
         assert rules[0]["local"][1]["projects"][0]["name"] == "alpha_project"
-        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/alpha_project/admin"]
+        assert rules[0]["remote"][3]["any_one_of"] == [
+            "/services/openstack/alpha_project/admin"
+        ]
         assert rules[1]["local"][1]["projects"][0]["name"] == "alpha_project"
-        assert rules[1]["remote"][3]["any_one_of"] == ["/services/openstack/alpha_project/member"]
+        assert rules[1]["remote"][3]["any_one_of"] == [
+            "/services/openstack/alpha_project/member"
+        ]
         assert rules[2]["local"][1]["projects"][0]["name"] == "zulu_project"
-        assert rules[2]["remote"][3]["any_one_of"] == ["/services/openstack/zulu_project/member"]
+        assert rules[2]["remote"][3]["any_one_of"] == [
+            "/services/openstack/zulu_project/member"
+        ]
         assert rules[3]["local"][1]["projects"][0]["name"] == "zulu_project"
-        assert rules[3]["remote"][3]["any_one_of"] == ["/services/openstack/zulu_project/reader"]
+        assert rules[3]["remote"][3]["any_one_of"] == [
+            "/services/openstack/zulu_project/reader"
+        ]
 
     def test_static_rules_placed_first(
         self,
@@ -290,7 +302,9 @@ class TestGroupPathResolution:
         assert len(rules) == 1
         assert rules[0]["remote"][3]["any_one_of"] == ["/custom/path/heat"]
         assert rules[0]["local"][1]["projects"][0]["name"] == "test_project"
-        assert rules[0]["local"][1]["projects"][0]["roles"] == [{"name": "heat_stack_user"}]
+        assert rules[0]["local"][1]["projects"][0]["roles"] == [
+            {"name": "heat_stack_user"}
+        ]
 
     def test_multiple_roles_per_group(
         self,
@@ -325,7 +339,9 @@ class TestGroupPathResolution:
             {"name": "load-balancer_member"},
             {"name": "heat_stack_user"},
         ]
-        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/test_project/member"]
+        assert rules[0]["remote"][3]["any_one_of"] == [
+            "/services/openstack/test_project/member"
+        ]
 
     def test_multiple_groups_per_assignment(
         self,
@@ -421,7 +437,9 @@ class TestGroupPathResolution:
 
         # Verify single-item list resolves correctly (same as string)
         assert len(rules) == 1
-        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/test_project/member"]
+        assert rules[0]["remote"][3]["any_one_of"] == [
+            "/services/openstack/test_project/member"
+        ]
 
     def test_group_prefix_without_trailing_slash(
         self,
@@ -445,7 +463,9 @@ class TestGroupPathResolution:
         rules = call_kwargs["rules"]
 
         # Verify concatenation without trailing slash (no double slash)
-        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstacktest_project/member"]
+        assert rules[0]["remote"][3]["any_one_of"] == [
+            "/services/openstacktest_project/member"
+        ]
 
 
 class TestProjectStateFiltering:
@@ -499,7 +519,9 @@ class TestProjectStateFiltering:
         # Verify ONLY the present project generated a rule
         assert len(rules) == 1
         assert rules[0]["local"][1]["projects"][0]["name"] == "active_proj"
-        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/active_proj/member"]
+        assert rules[0]["remote"][3]["any_one_of"] == [
+            "/services/openstack/active_proj/member"
+        ]
         # Verify locked and absent projects did NOT generate rules
         project_names = [r["local"][1]["projects"][0]["name"] for r in rules]
         assert "locked_proj" not in project_names

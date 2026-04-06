@@ -165,15 +165,21 @@ class TestPresentStatePipeline:
         patched_resources.ensure_group_role_assignments.side_effect = track(
             "ensure_group_role_assignments",
         )
-        patched_resources.ensure_network_stack.side_effect = track("ensure_network_stack")
+        patched_resources.ensure_network_stack.side_effect = track(
+            "ensure_network_stack"
+        )
         patched_resources.track_router_ips.side_effect = track("track_router_ips")
-        patched_resources.ensure_preallocated_fips.side_effect = track("ensure_preallocated_fips")
+        patched_resources.ensure_preallocated_fips.side_effect = track(
+            "ensure_preallocated_fips"
+        )
         patched_resources.ensure_preallocated_network.side_effect = track(
             "ensure_preallocated_network"
         )
         patched_resources.ensure_quotas.side_effect = track("ensure_quotas")
         patched_resources.ensure_baseline_sg.side_effect = track("ensure_baseline_sg")
-        patched_resources.unshelve_all_servers.side_effect = track("unshelve_all_servers")
+        patched_resources.unshelve_all_servers.side_effect = track(
+            "unshelve_all_servers"
+        )
         patched_resources.ensure_federation_mapping.side_effect = track(
             "ensure_federation_mapping",
         )
@@ -434,7 +440,9 @@ class TestAbsentStateDispatch:
         # Verify group roles revoked: all assignments converted to state="absent"
         patched_resources.ensure_group_role_assignments.assert_called_once()
         revoke_cfg = patched_resources.ensure_group_role_assignments.call_args[0][0]
-        assert all(entry.state == "absent" for entry in revoke_cfg.group_role_assignments)
+        assert all(
+            entry.state == "absent" for entry in revoke_cfg.group_role_assignments
+        )
 
         # Verify teardown_project called with correct IDs
         patched_resources.teardown_project.assert_called_once()
@@ -678,7 +686,9 @@ class TestPresentStatePartialFailure:
             name="test_project",
         )
         patched_resources.ensure_project.return_value = (project_action, "proj-123")
-        patched_resources.ensure_network_stack.side_effect = RuntimeError("Network API failure")
+        patched_resources.ensure_network_stack.side_effect = RuntimeError(
+            "Network API failure"
+        )
 
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
@@ -923,12 +933,16 @@ class TestMetadataPersistence:
         save_calls = shared_ctx.state_store.save.call_args_list
 
         # Verify project_id saved
-        project_id_calls = [c for c in save_calls if c[0][1] == ["metadata", "project_id"]]
+        project_id_calls = [
+            c for c in save_calls if c[0][1] == ["metadata", "project_id"]
+        ]
         assert len(project_id_calls) == 1
         assert project_id_calls[0][0][2] == "proj-123"
 
         # Verify domain_id saved
-        domain_id_calls = [c for c in save_calls if c[0][1] == ["metadata", "domain_id"]]
+        domain_id_calls = [
+            c for c in save_calls if c[0][1] == ["metadata", "domain_id"]
+        ]
         assert len(domain_id_calls) == 1
         assert domain_id_calls[0][0][2] == "default"
 
@@ -1082,7 +1096,9 @@ class TestLastReconciledStatePersistence:
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
         save_calls = shared_ctx.state_store.save.call_args_list
-        state_calls = [c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]]
+        state_calls = [
+            c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]
+        ]
         assert len(state_calls) == 1
         assert state_calls[0][0][2] == "present"
 
@@ -1108,7 +1124,9 @@ class TestLastReconciledStatePersistence:
         reconcile([cfg], [cfg], shared_ctx)
 
         save_calls = shared_ctx.state_store.save.call_args_list
-        state_calls = [c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]]
+        state_calls = [
+            c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]
+        ]
         assert len(state_calls) == 1
         assert state_calls[0][0][2] == "locked"
 
@@ -1124,5 +1142,7 @@ class TestLastReconciledStatePersistence:
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
         save_calls = shared_ctx.state_store.save.call_args_list
-        state_calls = [c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]]
+        state_calls = [
+            c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]
+        ]
         assert len(state_calls) == 0

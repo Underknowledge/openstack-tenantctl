@@ -79,14 +79,18 @@ class TestDecimalUnits:
     def test_gigabytes_to_gb(self) -> None:
         """500 GB = 500 GB (storage target unit)."""
         errors: list[str] = []
-        result = parse_quota_value("500GB", "GB", "block_storage.gigabytes", errors, "test")
+        result = parse_quota_value(
+            "500GB", "GB", "block_storage.gigabytes", errors, "test"
+        )
         assert result == 500
         assert errors == []
 
     def test_terabytes_to_gb(self) -> None:
         """2 TB = 2000 GB (decimal)."""
         errors: list[str] = []
-        result = parse_quota_value("2TB", "GB", "block_storage.gigabytes", errors, "test")
+        result = parse_quota_value(
+            "2TB", "GB", "block_storage.gigabytes", errors, "test"
+        )
         assert result == 2000
         assert errors == []
 
@@ -132,7 +136,9 @@ class TestBinaryUnits:
     def test_gibibytes_to_gb(self) -> None:
         """2 TiB = 2199.02... GB ≈ 2199 GB (storage)."""
         errors: list[str] = []
-        result = parse_quota_value("2TiB", "GB", "block_storage.gigabytes", errors, "test")
+        result = parse_quota_value(
+            "2TiB", "GB", "block_storage.gigabytes", errors, "test"
+        )
         assert result == 2199
         assert errors == []
 
@@ -242,14 +248,18 @@ class TestFractionalValues:
     def test_fractional_storage_target(self) -> None:
         """1.5 TB = 1500 GB (storage target unit)."""
         errors: list[str] = []
-        result = parse_quota_value("1.5TB", "GB", "block_storage.gigabytes", errors, "test")
+        result = parse_quota_value(
+            "1.5TB", "GB", "block_storage.gigabytes", errors, "test"
+        )
         assert result == 1500
         assert errors == []
 
     def test_rounding_nearest_integer(self) -> None:
         """1.029 GB rounds to nearest int (1 GB for storage)."""
         errors: list[str] = []
-        result = parse_quota_value("1.029GB", "GB", "block_storage.gigabytes", errors, "test")
+        result = parse_quota_value(
+            "1.029GB", "GB", "block_storage.gigabytes", errors, "test"
+        )
         assert result == 1
         assert errors == []
 
@@ -260,7 +270,9 @@ class TestErrorCases:
     def test_invalid_format_text(self) -> None:
         """Text without numbers is invalid."""
         errors: list[str] = []
-        result = parse_quota_value("fifty gigabytes", "MB", "compute.ram", errors, "test")
+        result = parse_quota_value(
+            "fifty gigabytes", "MB", "compute.ram", errors, "test"
+        )
         assert result == 0
         assert len(errors) == 1
         assert "invalid format" in errors[0]
@@ -335,14 +347,18 @@ class TestTargetUnitConversion:
     def test_storage_target_gb(self) -> None:
         """Storage quotas convert to GB."""
         errors: list[str] = []
-        result = parse_quota_value("2TB", "GB", "block_storage.gigabytes", errors, "test")
+        result = parse_quota_value(
+            "2TB", "GB", "block_storage.gigabytes", errors, "test"
+        )
         assert result == 2000
         assert errors == []
 
     def test_backup_storage_target_gb(self) -> None:
         """Backup storage quotas convert to GB."""
         errors: list[str] = []
-        result = parse_quota_value("500GB", "GB", "block_storage.backup_gigabytes", errors, "test")
+        result = parse_quota_value(
+            "500GB", "GB", "block_storage.backup_gigabytes", errors, "test"
+        )
         assert result == 500
         assert errors == []
 
@@ -369,8 +385,12 @@ class TestEdgeCasesAndSpecialValues:
         """Decimal vs binary units produce different results."""
         errors_decimal: list[str] = []
         errors_binary: list[str] = []
-        decimal_result = parse_quota_value("100GB", "MB", "compute.ram", errors_decimal, "test")
-        binary_result = parse_quota_value("100GiB", "MB", "compute.ram", errors_binary, "test")
+        decimal_result = parse_quota_value(
+            "100GB", "MB", "compute.ram", errors_decimal, "test"
+        )
+        binary_result = parse_quota_value(
+            "100GiB", "MB", "compute.ram", errors_binary, "test"
+        )
 
         # 100 GB = 100000 MB (decimal)
         assert decimal_result == 100000
