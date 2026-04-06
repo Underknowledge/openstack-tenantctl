@@ -37,9 +37,15 @@ def mock_conn() -> MagicMock:
     identity.update_mapping = MagicMock(name="update_mapping")
     identity.find_group = MagicMock(name="find_group")
     identity.find_role = MagicMock(name="find_role")
-    identity.validate_group_has_project_role = MagicMock(name="validate_group_has_project_role")
-    identity.assign_project_role_to_group = MagicMock(name="assign_project_role_to_group")
-    identity.unassign_project_role_from_group = MagicMock(name="unassign_project_role_from_group")
+    identity.validate_group_has_project_role = MagicMock(
+        name="validate_group_has_project_role"
+    )
+    identity.assign_project_role_to_group = MagicMock(
+        name="assign_project_role_to_group"
+    )
+    identity.unassign_project_role_from_group = MagicMock(
+        name="unassign_project_role_from_group"
+    )
     identity.delete_project = MagicMock(name="delete_project")
     conn.identity = identity
 
@@ -60,7 +66,9 @@ def mock_conn() -> MagicMock:
     network.routers = MagicMock(name="routers", return_value=[])
     network.delete_ip = MagicMock(name="delete_ip")
     network.ports = MagicMock(name="ports")
-    network.remove_interface_from_router = MagicMock(name="remove_interface_from_router")
+    network.remove_interface_from_router = MagicMock(
+        name="remove_interface_from_router"
+    )
     network.update_router = MagicMock(name="update_router")
     network.delete_router = MagicMock(name="delete_router")
     network.subnets = MagicMock(name="subnets")

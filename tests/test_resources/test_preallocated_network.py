@@ -21,7 +21,9 @@ def _cfg(
     include_network: bool = True,
 ) -> ProjectConfig:
     """Return a project config with the given network quota values."""
-    quotas: dict = {"network": {"networks": networks, "subnets": subnets, "routers": routers}}
+    quotas: dict = {
+        "network": {"networks": networks, "subnets": subnets, "routers": routers}
+    }
     data: dict = {
         "name": "test_project",
         "resource_prefix": "testproject",
@@ -92,7 +94,9 @@ class TestDryRunNetworksLessThan2:
         cfg = _cfg(networks=1)
         existing_net = _mock_net("testproject-network")
 
-        with patch("src.resources.prealloc.network.find_network", return_value=existing_net):
+        with patch(
+            "src.resources.prealloc.network.find_network", return_value=existing_net
+        ):
             actions = ensure_preallocated_network(cfg, "proj-id", dry_run_ctx)
 
         assert len(actions) == 1
@@ -209,7 +213,9 @@ class TestNetworkAlreadyExists:
         cfg = _cfg(networks=1, subnets=1, routers=1)
         existing_net = _mock_net("testproject-network")
 
-        with patch("src.resources.prealloc.network.find_network", return_value=existing_net):
+        with patch(
+            "src.resources.prealloc.network.find_network", return_value=existing_net
+        ):
             actions = ensure_preallocated_network(cfg, "proj-id", shared_ctx)
 
         assert len(actions) == 1
@@ -231,7 +237,9 @@ class TestNetworkAlreadyExists:
 class TestSafetyCheckDifferentName:
     """Project owns network(s) that don't match expected name → skip creation, set quotas."""
 
-    def test_existing_different_name_sets_quota(self, shared_ctx: SharedContext) -> None:
+    def test_existing_different_name_sets_quota(
+        self, shared_ctx: SharedContext
+    ) -> None:
         cfg = _cfg(networks=1, subnets=1, routers=1)
         legacy_net = _mock_net("legacy-network")
 
@@ -355,7 +363,9 @@ class TestDefaultQuotaValues:
         )
         existing_net = _mock_net("testproject-network")
 
-        with patch("src.resources.prealloc.network.find_network", return_value=existing_net):
+        with patch(
+            "src.resources.prealloc.network.find_network", return_value=existing_net
+        ):
             actions = ensure_preallocated_network(cfg, "proj-id", shared_ctx)
 
         assert len(actions) == 1
@@ -375,7 +385,9 @@ class TestDefaultQuotaValues:
 class TestQuotaUpdateFailure:
     """Quota update can fail with HttpException during _set_network_quotas."""
 
-    def test_quota_update_fails_during_networks_zero(self, shared_ctx: SharedContext) -> None:
+    def test_quota_update_fails_during_networks_zero(
+        self, shared_ctx: SharedContext
+    ) -> None:
         """When networks=0, quota update failure propagates after retries."""
         from openstack.exceptions import HttpException
 
@@ -393,7 +405,9 @@ class TestQuotaUpdateFailure:
         # Retry logic means multiple attempts (at least 2)
         assert shared_ctx.conn.network.update_quota.call_count >= 2
 
-    def test_quota_update_fails_after_network_creation(self, shared_ctx: SharedContext) -> None:
+    def test_quota_update_fails_after_network_creation(
+        self, shared_ctx: SharedContext
+    ) -> None:
         """Quota update failure after successful network creation still raises."""
         from openstack.exceptions import HttpException
 
@@ -422,16 +436,22 @@ class TestQuotaUpdateFailure:
         # Network stack was created, then quota update failed
         assert shared_ctx.conn.network.update_quota.call_count >= 2
 
-    def test_quota_update_fails_with_existing_network(self, shared_ctx: SharedContext) -> None:
+    def test_quota_update_fails_with_existing_network(
+        self, shared_ctx: SharedContext
+    ) -> None:
         """Quota update failure when network already exists propagates exception."""
         from openstack.exceptions import HttpException
 
         cfg = _cfg(networks=1, subnets=1, routers=1)
         existing_net = _mock_net("testproject-network")
 
-        shared_ctx.conn.network.update_quota.side_effect = HttpException(message="Service error")
+        shared_ctx.conn.network.update_quota.side_effect = HttpException(
+            message="Service error"
+        )
 
-        with patch("src.resources.prealloc.network.find_network", return_value=existing_net):
+        with patch(
+            "src.resources.prealloc.network.find_network", return_value=existing_net
+        ):
             import pytest
 
             with pytest.raises(HttpException, match="Service error"):
@@ -446,7 +466,9 @@ class TestQuotaUpdateFailure:
 class TestNetworksZeroWithExistingNetworks:
     """When networks=0 is configured but project has existing networks."""
 
-    def test_sets_quota_to_zero_ignores_existing(self, shared_ctx: SharedContext) -> None:
+    def test_sets_quota_to_zero_ignores_existing(
+        self, shared_ctx: SharedContext
+    ) -> None:
         """networks=0 sets quota regardless of existing networks (no safety check).
 
         The networks=0 branch (line 104) happens BEFORE find_network (line 125),
@@ -494,7 +516,9 @@ class TestPartialQuotaConfig:
         )
         existing_net = _mock_net("testproject-network")
 
-        with patch("src.resources.prealloc.network.find_network", return_value=existing_net):
+        with patch(
+            "src.resources.prealloc.network.find_network", return_value=existing_net
+        ):
             actions = ensure_preallocated_network(cfg, "proj-id", shared_ctx)
 
         assert len(actions) == 1
@@ -522,7 +546,9 @@ class TestPartialQuotaConfig:
         )
         existing_net = _mock_net("testproject-network")
 
-        with patch("src.resources.prealloc.network.find_network", return_value=existing_net):
+        with patch(
+            "src.resources.prealloc.network.find_network", return_value=existing_net
+        ):
             actions = ensure_preallocated_network(cfg, "proj-id", shared_ctx)
 
         assert len(actions) == 1

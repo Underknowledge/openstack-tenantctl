@@ -138,7 +138,9 @@ class TestEnsureQuotas:
         assert actions[0].status == ActionStatus.SKIPPED
         assert "offline" in actions[0].details
 
-    @pytest.mark.parametrize(("fip_count", "openstack_current"), [(1, 5), (3, 0), (10, 999)])
+    @pytest.mark.parametrize(
+        ("fip_count", "openstack_current"), [(1, 5), (3, 0), (10, 999)]
+    )
     def test_excludes_floating_ips_unconditionally(
         self,
         shared_ctx: SharedContext,
@@ -350,7 +352,9 @@ class TestNetworkQuotasWithLoadBalancer:
         assert "load_balancer:" in network_action.details
 
         # Verify API calls
-        shared_ctx.conn.network.update_quota.assert_called_once_with("project-id-123", ports=100)
+        shared_ctx.conn.network.update_quota.assert_called_once_with(
+            "project-id-123", ports=100
+        )
         shared_ctx.conn.load_balancer.update_quota.assert_called_once_with(
             "project-id-123", load_balancers=10, listeners=20
         )
@@ -411,7 +415,9 @@ class TestNetworkQuotasWithLoadBalancer:
         shared_ctx.conn.network.get_quota.return_value = mock_net_quota
 
         # Octavia service unavailable
-        shared_ctx.conn.load_balancer.get_quota.side_effect = Exception("Service not found")
+        shared_ctx.conn.load_balancer.get_quota.side_effect = Exception(
+            "Service not found"
+        )
 
         # Mock compute and block_storage
         compute_quota = MagicMock()
@@ -447,7 +453,9 @@ class TestNetworkQuotasWithLoadBalancer:
         assert "network:" in network_action.details
 
         # Verify Neutron received correct value
-        shared_ctx.conn.network.update_quota.assert_called_once_with("project-id-123", ports=100)
+        shared_ctx.conn.network.update_quota.assert_called_once_with(
+            "project-id-123", ports=100
+        )
         # load_balancer.update_quota should NOT be called (get_quota failed)
         shared_ctx.conn.load_balancer.update_quota.assert_not_called()
 
@@ -849,8 +857,12 @@ class TestNetworkQuotaExclusions:
         }
 
         # Verify each service updated with correct values
-        shared_ctx.conn.compute.update_quota_set.assert_called_once_with("proj-123", cores=50)
-        shared_ctx.conn.network.update_quota.assert_called_once_with("proj-123", subnets=10)
+        shared_ctx.conn.compute.update_quota_set.assert_called_once_with(
+            "proj-123", cores=50
+        )
+        shared_ctx.conn.network.update_quota.assert_called_once_with(
+            "proj-123", subnets=10
+        )
         call_kwargs = shared_ctx.conn.block_storage.update_quota_set.call_args[1]
         assert call_kwargs["gigabytes"] == 2000
 
@@ -1284,7 +1296,9 @@ class TestUsageAwareQuotaEnforcement:
         assert updated[0].resource_type == "compute_quota"
 
         # Quota set to 10 (clamped to usage), not 5
-        shared_ctx.conn.compute.update_quota_set.assert_called_once_with("proj-123", cores=10)
+        shared_ctx.conn.compute.update_quota_set.assert_called_once_with(
+            "proj-123", cores=10
+        )
 
     def test_compute_quota_above_usage_applied(
         self,
@@ -1332,7 +1346,9 @@ class TestUsageAwareQuotaEnforcement:
         updated = [a for a in actions if a.status == ActionStatus.UPDATED]
         assert any(a.resource_type == "compute_quota" for a in updated)
 
-        shared_ctx.conn.compute.update_quota_set.assert_called_once_with("proj-123", cores=15)
+        shared_ctx.conn.compute.update_quota_set.assert_called_once_with(
+            "proj-123", cores=15
+        )
 
     def test_compute_quota_raised_no_usage_check(
         self,
@@ -1420,7 +1436,9 @@ class TestUsageAwareQuotaEnforcement:
         assert updated[0].resource_type == "network_quota"
 
         # Quota set to 5 (usage), not 2 (desired)
-        shared_ctx.conn.network.update_quota.assert_called_once_with("proj-123", subnets=5)
+        shared_ctx.conn.network.update_quota.assert_called_once_with(
+            "proj-123", subnets=5
+        )
 
     def test_block_storage_quota_below_usage_clamped(
         self,
