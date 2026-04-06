@@ -1,14 +1,7 @@
 # OpenStack TenantCtl
 
-**One YAML file. One command. Fully provisioned OpenStack projects.**
+**One command. Fully provisioned OpenStack projects.**
 
-### Project Status
-
-The core provisioning engine is stable and battle-tested against production OpenStack deployments. Active development continues — new resource types, better ergonomics, sharper safety nets — but the foundation you build on today won't shift under you.
-
-TenantCtl is designed for dual use: run it as a **standalone CLI** for day-to-day operations, or **import it as a Python library** to embed provisioning in your own tooling. The [`ConfigSource`](docs/API-REFERENCE.md) protocol means configuration can come from anywhere — YAML files today, a REST API or database tomorrow — without touching the provisioning logic.
-
----
 
 You've done this before. Create the project. Build the network. Wire the router. Set quotas across four services. Allocate floating IPs. Lock down security groups. Configure federation. Now do it nine more times. Now do it again next month when someone "just needs one thing."
 
@@ -26,7 +19,7 @@ Run it again tomorrow: zero drift. Run it after someone "fixes" something by han
 
 **Without this tool** — a dozen manual steps per project:
 
-> Create project. Create network. Create subnet with CIDR and pools. Create router, attach external gateway. Set compute quotas. Set network quotas. Set storage quotas. Set LB quotas. Allocate floating IPs. Create security groups. Assign group roles. Configure federation mapping. *Repeat for every project. Repeat next week when someone changes something.*
+> Create project. Create network. Create subnet with CIDR and pools. Create router, attach external gateway. Set compute quotas. Set network quotas. Set storage quotas. Set LB quotas. Allocate floating IPs. Create security groups. Assign group roles. Configure federation mapping. *Repeat for every project. Repeat next week when someone wants a change somewhere.*
 
 **With this tool** one file, one command:
 
@@ -78,6 +71,12 @@ Run it again — nothing changes:
 ```
 0 created, 0 updated, 0 deleted, 10 skipped, 0 failed
 ```
+---
+### Project Status
+
+TenantCtl is designed for dual use: run it as a **standalone CLI** that you can already use for day-to-day operations, or **as a Python library** to embed provisioning in your own tooling. The [`ConfigSource`](docs/API-REFERENCE.md) protocol means configuration can come from anywhere — YAML files today, a REST API or database tomorrow — provisioning logic untouched.
+
+The core provisioning engine is tested against OpenStack deployments. The config format and CLI interface may still change while the project is young. If you depend on this, simply star the repo and let me know how you use it, and I'll freeze the interface for you.
 
 ---
 
@@ -91,6 +90,8 @@ Run it again — nothing changes:
 | **Auditable** | Every action logged - created, updated, skipped, or failed |
 | **Resilient** | Automatic retry with backoff; one project's failure doesn't block others |
 | **Safe** | Dry-run mode, fail-fast validation, quota safety nets, teardown guards |
+| Sanity-preserving | Your therapist doesn't understand OpenStack anyway |
+| Ethical | No animals or cloud admins were harmed in the making of this tool |
 
 ---
 
