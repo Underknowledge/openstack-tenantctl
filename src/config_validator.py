@@ -29,7 +29,12 @@ def validate_project(project: dict[str, Any], errors: list[str]) -> ProjectConfi
 
     Returns a ``ProjectConfig`` if construction was possible, ``None`` otherwise.
     """
-    label = project.get("name", "<unknown>")
+    name = project.get("name")
+    if isinstance(name, str) and name:
+        label = name
+    else:
+        state_key = project.get("_state_key", "")
+        label = f"{state_key}.yaml" if state_key else "<unknown>"
     return ProjectConfig.validate(project, errors, label)
 
 

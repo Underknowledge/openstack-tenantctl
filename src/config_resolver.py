@@ -113,16 +113,19 @@ def expand_security_group_rules(project: dict[str, Any], errors: list[str]) -> N
     if not isinstance(rules, list):
         return
 
-    project_label = project.get("name", "<unknown>")
+    name = project.get("name")
+    if isinstance(name, str) and name:
+        project_label = name
+    else:
+        state_key = project.get("_state_key", "")
+        project_label = f"{state_key}.yaml" if state_key else "<unknown>"
     expanded: list[dict[str, Any]] = []
 
     for idx, entry in enumerate(rules):
         if isinstance(entry, str):
             preset = PREDEFINED_RULES.get(entry)
             if preset is None:
-                errors.append(
-                    f"{project_label}: security_group.rules[{idx}] unknown preset '{entry}'"
-                )
+                errors.append(f"{project_label}: security_group.rules[{idx}] unknown preset '{entry}'")
                 continue
             expanded.append(copy.deepcopy(preset))
         elif isinstance(entry, dict):
@@ -130,10 +133,7 @@ def expand_security_group_rules(project: dict[str, Any], errors: list[str]) -> N
             if preset_name is not None:
                 preset = PREDEFINED_RULES.get(preset_name)
                 if preset is None:
-                    errors.append(
-                        f"{project_label}: security_group.rules[{idx}] "
-                        f"unknown preset '{preset_name}'"
-                    )
+                    errors.append(f"{project_label}: security_group.rules[{idx}] " f"unknown preset '{preset_name}'")
                     continue
                 merged_rule = copy.deepcopy(preset)
                 for key, value in entry.items():

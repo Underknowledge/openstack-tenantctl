@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Type pipeline-level defaults dict with `DefaultsConfig` frozen dataclass
+- FIP allocation: prefer router gateway network/subnet over auto-discovery
+- Switch formatter from ruff to black (line-length 120, not a teleprompter)
+- Bump CI actions versions
+- Reorganize README structure
+- Validation errors now show source filename instead of `<unknown>` when project name is missing
+
 ## [0.2.8] - 2026-04-05
 
 ### Changed
