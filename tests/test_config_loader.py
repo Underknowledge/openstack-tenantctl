@@ -75,9 +75,7 @@ def _write_config(
     """
     if defaults is not None:
         defaults_file = tmp_path / "defaults.yaml"
-        defaults_file.write_text(
-            yaml.dump(defaults, default_flow_style=False), encoding="utf-8"
-        )
+        defaults_file.write_text(yaml.dump(defaults, default_flow_style=False), encoding="utf-8")
 
     projects_dir = tmp_path / "projects"
     projects_dir.mkdir(exist_ok=True)
@@ -85,9 +83,7 @@ def _write_config(
     if projects is not None:
         for filename, content in projects.items():
             proj_file = projects_dir / f"{filename}.yaml"
-            proj_file.write_text(
-                yaml.dump(content, default_flow_style=False), encoding="utf-8"
-            )
+            proj_file.write_text(yaml.dump(content, default_flow_style=False), encoding="utf-8")
 
     return str(tmp_path)
 
@@ -106,9 +102,7 @@ class TestLoadValidProject:
             "quotas": {"compute": {"cores": 10}},
         }
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _loaded_defaults = load_all_projects(config_dir)
 
@@ -130,9 +124,7 @@ class TestDeepMerge:
         defaults = {"quotas": {"compute": {"cores": 10, "ram": 2048}}}
         project = _minimum_valid_project()
         project["quotas"] = {"compute": {"cores": 40}}
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -184,6 +176,23 @@ class TestMissingRequiredField:
 
         with pytest.raises(ConfigValidationError):
             load_all_projects(config_dir)
+
+
+class TestMissingNameShowsFilename:
+    """When 'name' is missing, the error should show the source filename."""
+
+    def test_missing_name_error_contains_filename(self, tmp_path: Path) -> None:
+        project: dict[str, Any] = {
+            "network": {"subnet": {"cidr": "192.168.1.0/24"}},
+        }
+        config_dir = _write_config(tmp_path, projects={"dev-team": project})
+
+        with pytest.raises(ConfigValidationError) as exc_info:
+            load_all_projects(config_dir)
+
+        error_text = " ".join(exc_info.value.errors)
+        assert "dev-team.yaml" in error_text
+        assert "<unknown>" not in error_text
 
 
 class TestInvalidProjectName:
@@ -240,9 +249,7 @@ class TestCidrOverlap:
 
     def test_cidr_overlap_exits(self, tmp_path: Path) -> None:
         """Verify CIDR overlap detection includes both project names in error."""
-        project_a = _minimum_valid_project(
-            name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24"
-        )
+        project_a = _minimum_valid_project(name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24")
         # Use non-overlapping CIDR for projectb but one that overlaps with projecta
         project_b = _minimum_valid_project(
             name="projectb",
@@ -267,12 +274,8 @@ class TestCidrOverlap:
 
     def test_cidr_overlap_allowed_by_default(self, tmp_path: Path) -> None:
         """Overlapping CIDRs load successfully when enforce_unique_cidrs is off."""
-        project_a = _minimum_valid_project(
-            name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24"
-        )
-        project_b = _minimum_valid_project(
-            name="projectb", resource_prefix="projectb", cidr="192.168.1.0/24"
-        )
+        project_a = _minimum_valid_project(name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24")
+        project_b = _minimum_valid_project(name="projectb", resource_prefix="projectb", cidr="192.168.1.0/24")
         config_dir = _write_config(
             tmp_path,
             projects={"a_proj": project_a, "b_proj": project_b},
@@ -448,9 +451,7 @@ class TestDomainConfiguration:
     def test_domain_id_from_defaults(self, tmp_path: Path) -> None:
         defaults = {"domain_id": "default-domain"}
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -459,9 +460,7 @@ class TestDomainConfiguration:
     def test_domain_from_defaults(self, tmp_path: Path) -> None:
         defaults = {"domain": "default-friendly"}
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -483,9 +482,7 @@ class TestDomainConfiguration:
         defaults = {"domain_id": "default-domain"}
         project = _minimum_valid_project()
         project["domain_id"] = "project-domain"
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -501,10 +498,9 @@ class TestDomainConfiguration:
 
         assert merged_projects[0].domain_id == "env-domain-uuid"
 
-    def test_domain_env_var_user_domain_fallback(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_domain_env_var_user_domain_fallback(self, tmp_path: Path, monkeypatch) -> None:
         """When no config domain or OS_PROJECT_DOMAIN_ID, use OS_USER_DOMAIN_NAME."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
         monkeypatch.setenv("OS_USER_DOMAIN_NAME", "user-domain")
         project = _minimum_valid_project()
         config_dir = _write_config(tmp_path, projects={"test": project})
@@ -513,9 +509,7 @@ class TestDomainConfiguration:
 
         assert merged_projects[0].domain_id == "user-domain"
 
-    def test_domain_precedence_project_over_env(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_domain_precedence_project_over_env(self, tmp_path: Path, monkeypatch) -> None:
         """Project config takes precedence over env vars."""
         monkeypatch.setenv("OS_PROJECT_DOMAIN_ID", "env-domain")
         project = _minimum_valid_project()
@@ -526,8 +520,10 @@ class TestDomainConfiguration:
 
         assert merged_projects[0].domain_id == "project-domain"
 
-    def test_domain_defaults_to_default(self, tmp_path: Path) -> None:
+    def test_domain_defaults_to_default(self, tmp_path: Path, monkeypatch) -> None:
         """When no config or env vars, default to 'default'."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         project = _minimum_valid_project()
         config_dir = _write_config(tmp_path, projects={"test": project})
 
@@ -535,13 +531,13 @@ class TestDomainConfiguration:
 
         assert merged_projects[0].domain_id == "default"
 
-    def test_domain_id_null_triggers_auto_discovery(self, tmp_path: Path) -> None:
+    def test_domain_id_null_triggers_auto_discovery(self, tmp_path: Path, monkeypatch) -> None:
         """domain_id: null in defaults triggers auto-discovery, resolves to 'default'."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         defaults = {"domain_id": None}
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -552,53 +548,45 @@ class TestDomainConfiguration:
         monkeypatch.setenv("OS_PROJECT_DOMAIN_ID", "my-env-domain")
         defaults = {"domain_id": None}
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
         assert merged_projects[0].domain_id == "my-env-domain"
 
-    def test_domain_id_null_project_overrides_default(self, tmp_path: Path) -> None:
+    def test_domain_id_null_project_overrides_default(self, tmp_path: Path, monkeypatch) -> None:
         """Project domain_id: null overrides a concrete default, triggering auto-discovery."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         defaults = {"domain_id": "shared-domain"}
         project = _minimum_valid_project()
         project["domain_id"] = None
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
         assert merged_projects[0].domain_id == "default"
 
-    def test_domain_id_null_raw_yaml_triggers_auto_discovery(
-        self, tmp_path: Path
-    ) -> None:
+    def test_domain_id_null_raw_yaml_triggers_auto_discovery(self, tmp_path: Path, monkeypatch) -> None:
         """Raw YAML 'domain_id: null' is parsed as None and triggers auto-discovery."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         defaults_file = tmp_path / "defaults.yaml"
         defaults_file.write_text("domain_id: null\n", encoding="utf-8")
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
-        (projects_dir / "test.yaml").write_text(
-            yaml.dump(_minimum_valid_project()), encoding="utf-8"
-        )
+        (projects_dir / "test.yaml").write_text(yaml.dump(_minimum_valid_project()), encoding="utf-8")
 
         merged_projects, _ = load_all_projects(str(tmp_path))
 
         assert merged_projects[0].domain_id == "default"
 
-    def test_domain_id_null_in_defaults_with_concrete_project_domain(
-        self, tmp_path: Path
-    ) -> None:
+    def test_domain_id_null_in_defaults_with_concrete_project_domain(self, tmp_path: Path) -> None:
         """Defaults domain_id: null does not interfere when project sets a concrete domain."""
         defaults = {"domain_id": None}
         project = _minimum_valid_project()
         project["domain_id"] = "project-concrete-domain"
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -930,9 +918,7 @@ class TestGroupRoleAssignmentsValidation:
             ],
         }
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -951,9 +937,7 @@ class TestGroupRoleAssignmentsValidation:
         project["group_role_assignments"] = [
             {"group": "project-ops", "roles": ["member"]},
         ]
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1013,9 +997,7 @@ class TestProjectStateValidation:
         """When state is not specified, defaults from defaults.yaml apply."""
         defaults = {"state": "present"}
         project = _minimum_valid_project()
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1037,9 +1019,7 @@ class TestProjectStateValidation:
 
     def test_absent_skips_cidr_overlap_check(self, tmp_path: Path) -> None:
         """Absent projects are excluded from CIDR overlap checks."""
-        project_a = _minimum_valid_project(
-            name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24"
-        )
+        project_a = _minimum_valid_project(name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24")
         project_b: dict[str, Any] = {
             "name": "projectb",
             "resource_prefix": "projectb",
@@ -1140,22 +1120,16 @@ class TestStateLoading:
         config_dir = _write_config(tmp_path, projects={"proj": project})
 
         state_store = YamlFileStateStore(tmp_path / "state")
-        state_store.save(
-            "proj", ["preallocated_fips"], [{"id": "fip-1", "address": "10.0.0.1"}]
-        )
+        state_store.save("proj", ["preallocated_fips"], [{"id": "fip-1", "address": "10.0.0.1"}])
 
         merged_projects, _ = load_all_projects(config_dir, state_store=state_store)
 
-        assert merged_projects[0].preallocated_fips == [
-            FipEntry(id="fip-1", address="10.0.0.1")
-        ]
+        assert merged_projects[0].preallocated_fips == [FipEntry(id="fip-1", address="10.0.0.1")]
 
     def test_state_file_wins_over_yaml(self, tmp_path: Path) -> None:
         """State file takes precedence over state keys in project YAML."""
         project = _minimum_valid_project()
-        project["router_ips"] = [
-            {"id": "old", "name": "old-router", "external_ip": "1.1.1.1"}
-        ]
+        project["router_ips"] = [{"id": "old", "name": "old-router", "external_ip": "1.1.1.1"}]
         config_dir = _write_config(tmp_path, projects={"proj": project})
 
         state_store = YamlFileStateStore(tmp_path / "state")
@@ -1167,9 +1141,7 @@ class TestStateLoading:
 
         merged_projects, _ = load_all_projects(config_dir, state_store=state_store)
 
-        assert merged_projects[0].router_ips == [
-            RouterIpEntry(id="new", name="new-router", external_ip="2.2.2.2")
-        ]
+        assert merged_projects[0].router_ips == [RouterIpEntry(id="new", name="new-router", external_ip="2.2.2.2")]
 
     def test_no_state_store_yaml_keys_still_work(self, tmp_path: Path) -> None:
         """Without state_store, state keys in YAML are accessible via deep-merge."""
@@ -1179,9 +1151,7 @@ class TestStateLoading:
 
         merged_projects, _ = load_all_projects(config_dir)
 
-        assert merged_projects[0].router_ips == [
-            RouterIpEntry(id="r1", name="rtr", external_ip="3.3.3.3")
-        ]
+        assert merged_projects[0].router_ips == [RouterIpEntry(id="r1", name="rtr", external_ip="3.3.3.3")]
 
     def test_migration_from_yaml_to_state_file(self, tmp_path: Path) -> None:
         """State keys in YAML but not in state file are auto-migrated."""
@@ -1195,15 +1165,11 @@ class TestStateLoading:
         merged_projects, _ = load_all_projects(config_dir, state_store=state_store)
 
         # Value is available in merged config.
-        assert merged_projects[0].preallocated_fips == [
-            FipEntry(id="fip-1", address="10.0.0.1")
-        ]
+        assert merged_projects[0].preallocated_fips == [FipEntry(id="fip-1", address="10.0.0.1")]
 
         # Value was migrated to state file.
         state_data = state_store.load("proj")
-        assert state_data["preallocated_fips"] == [
-            {"id": "fip-1", "address": "10.0.0.1"}
-        ]
+        assert state_data["preallocated_fips"] == [{"id": "fip-1", "address": "10.0.0.1"}]
 
     def test_empty_state_file_no_keys_injected(self, tmp_path: Path) -> None:
         """When state file is empty and YAML has no state keys, nothing is injected."""
@@ -1240,9 +1206,7 @@ class TestYamlConfigSource:
     """Test YamlConfigSource methods in isolation."""
 
     def test_load_defaults_returns_dict(self, tmp_path: Path) -> None:
-        (tmp_path / "defaults.yaml").write_text(
-            yaml.dump({"domain_id": "test-domain"}), encoding="utf-8"
-        )
+        (tmp_path / "defaults.yaml").write_text(yaml.dump({"domain_id": "test-domain"}), encoding="utf-8")
         source = YamlConfigSource(str(tmp_path))
 
         defaults, errors = source.load_defaults()
@@ -1279,9 +1243,7 @@ class TestYamlConfigSource:
     def test_load_raw_projects_returns_raw_projects(self, tmp_path: Path) -> None:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
-        (projects_dir / "alpha.yaml").write_text(
-            yaml.dump({"name": "alpha"}), encoding="utf-8"
-        )
+        (projects_dir / "alpha.yaml").write_text(yaml.dump({"name": "alpha"}), encoding="utf-8")
         source = YamlConfigSource(str(tmp_path))
 
         raw_projects, errors = source.load_raw_projects()
@@ -1386,6 +1348,23 @@ class TestBuildProjects:
         # Verify no projects were returned (validation failed)
         assert merged == []
 
+    def test_missing_name_shows_filename_in_error(self, tmp_path: Path) -> None:
+        """When name is missing, error message includes the source filename."""
+        project = _minimum_valid_project()
+        del project["name"]  # Remove required field
+        config_dir = _write_config(tmp_path, projects={"dev-team": project})
+
+        with pytest.raises(ConfigValidationError) as exc:
+            load_all_projects(config_dir)
+
+        # Error should contain filename, not <unknown>
+        errors = exc.value.errors
+        assert len(errors) > 0
+        error_msg = errors[0]
+        assert "dev-team.yaml" in error_msg
+        assert "<unknown>" not in error_msg
+        assert "missing required field 'name'" in error_msg
+
     def test_cidr_overlap_detected(self) -> None:
         """Pipeline detects CIDR overlaps and names both projects in error."""
         raw = [
@@ -1393,9 +1372,7 @@ class TestBuildProjects:
                 state_key="a",
                 label="a.yaml",
                 source_path="/fake/a.yaml",
-                data=_minimum_valid_project(
-                    name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24"
-                ),
+                data=_minimum_valid_project(name="projecta", resource_prefix="projecta", cidr="192.168.1.0/24"),
             ),
             RawProject(
                 state_key="b",
@@ -1440,8 +1417,10 @@ class TestBuildProjects:
         assert merged[0].quotas.compute["cores"] == 40
         assert merged[0].quotas.compute["ram"] == 2048
 
-    def test_domain_auto_populated(self) -> None:
+    def test_domain_auto_populated(self, monkeypatch) -> None:
         """Pipeline auto-populates domain_id to 'default' when not specified."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         raw = [
             RawProject(
                 state_key="proj",
@@ -1457,8 +1436,10 @@ class TestBuildProjects:
         # Verify domain_id was auto-populated with the default fallback value
         assert merged[0].domain_id == "default"
 
-    def test_domain_null_in_defaults_triggers_auto_discovery(self) -> None:
+    def test_domain_null_in_defaults_triggers_auto_discovery(self, monkeypatch) -> None:
         """Pipeline treats domain_id=None (null) in defaults as auto-discover."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         defaults: dict[str, Any] = {"domain_id": None}
         raw = [
             RawProject(
@@ -1474,8 +1455,10 @@ class TestBuildProjects:
         assert errors == []
         assert merged[0].domain_id == "default"
 
-    def test_domain_null_in_project_overrides_concrete_default(self) -> None:
+    def test_domain_null_in_project_overrides_concrete_default(self, monkeypatch) -> None:
         """Pipeline: project domain_id=None overrides concrete default."""
+        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
         defaults: dict[str, Any] = {"domain_id": "shared"}
         project_data = _minimum_valid_project()
         project_data["domain_id"] = None
@@ -1503,9 +1486,7 @@ class TestBuildProjects:
     def test_state_store_integration(self, tmp_path: Path) -> None:
         """Pipeline loads state from state_store when provided."""
         state_store = YamlFileStateStore(tmp_path / "state")
-        state_store.save(
-            "proj", ["preallocated_fips"], [{"id": "fip-1", "address": "10.0.0.1"}]
-        )
+        state_store.save("proj", ["preallocated_fips"], [{"id": "fip-1", "address": "10.0.0.1"}])
         raw = [
             RawProject(
                 state_key="proj",
@@ -1544,9 +1525,7 @@ class TestMinimalProjectConfig:
             },
         }
         project = {"name": "minimalproject"}
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1642,9 +1621,7 @@ class TestPlaceholderNestedStrings:
 
     def test_placeholder_in_quota_nested_config(self, tmp_path: Path) -> None:
         """{name} placeholder replaced in nested config (description and resource_prefix)."""
-        project = _minimum_valid_project(
-            name="myproject", resource_prefix="{name}prefix"
-        )
+        project = _minimum_valid_project(name="myproject", resource_prefix="{name}prefix")
         project["description"] = "Desc for {name}"
         config_dir = _write_config(tmp_path, projects={"test": project})
 
@@ -1670,9 +1647,7 @@ class TestListOverrideBehavior:
             "name": "default",
             "rules": ["ICMP"],
         }
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1697,9 +1672,7 @@ class TestListOverrideBehavior:
         project["network"]["subnet"]["allocation_pools"] = [
             {"start": "192.168.1.50", "end": "192.168.1.200"},
         ]
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1723,9 +1696,7 @@ class TestDeepNestedDictMerge:
         project = _minimum_valid_project()
         # Only override compute.cores, rest should merge from defaults
         project["quotas"] = {"compute": {"cores": 50}}
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1757,9 +1728,7 @@ class TestDeepNestedDictMerge:
                 "allocation_pools": [{"start": "192.168.1.1", "end": "192.168.1.253"}],
             }
         }
-        config_dir = _write_config(
-            tmp_path, defaults=defaults, projects={"test": project}
-        )
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
@@ -1813,15 +1782,9 @@ class TestYamlConfigSourceEdgeCases:
         """Multiple project files are loaded in sorted order by filename."""
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
-        (projects_dir / "c-project.yaml").write_text(
-            yaml.dump({"name": "c"}), encoding="utf-8"
-        )
-        (projects_dir / "a-project.yaml").write_text(
-            yaml.dump({"name": "a"}), encoding="utf-8"
-        )
-        (projects_dir / "b-project.yaml").write_text(
-            yaml.dump({"name": "b"}), encoding="utf-8"
-        )
+        (projects_dir / "c-project.yaml").write_text(yaml.dump({"name": "c"}), encoding="utf-8")
+        (projects_dir / "a-project.yaml").write_text(yaml.dump({"name": "a"}), encoding="utf-8")
+        (projects_dir / "b-project.yaml").write_text(yaml.dump({"name": "b"}), encoding="utf-8")
         source = YamlConfigSource(str(tmp_path))
 
         raw_projects, errors = source.load_raw_projects()
@@ -1836,13 +1799,9 @@ class TestYamlConfigSourceEdgeCases:
         """Mix of valid and invalid YAML files: valid loaded, errors reported."""
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
-        (projects_dir / "valid.yaml").write_text(
-            yaml.dump({"name": "valid"}), encoding="utf-8"
-        )
+        (projects_dir / "valid.yaml").write_text(yaml.dump({"name": "valid"}), encoding="utf-8")
         (projects_dir / "bad.yaml").write_text(":\ninvalid: [", encoding="utf-8")
-        (projects_dir / "also-valid.yaml").write_text(
-            yaml.dump({"name": "also-valid"}), encoding="utf-8"
-        )
+        (projects_dir / "also-valid.yaml").write_text(yaml.dump({"name": "also-valid"}), encoding="utf-8")
         source = YamlConfigSource(str(tmp_path))
 
         raw_projects, errors = source.load_raw_projects()
@@ -1885,9 +1844,7 @@ class TestMinimumValidProjectHelper:
 
     def test_explicit_gateway_overrides_auto_calculation(self, tmp_path: Path) -> None:
         """Explicit gateway_ip should be preserved."""
-        project = _minimum_valid_project(
-            cidr="192.168.1.0/24", gateway_ip="192.168.1.254"
-        )
+        project = _minimum_valid_project(cidr="192.168.1.0/24", gateway_ip="192.168.1.254")
         config_dir = _write_config(tmp_path, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)

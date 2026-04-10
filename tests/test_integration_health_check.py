@@ -9,8 +9,10 @@ from __future__ import annotations
 from src.config_loader import load_all_projects
 
 
-def test_config_loading_integration():
+def test_config_loading_integration(monkeypatch):
     """Integration test: Load projects from test fixtures and validate structure."""
+    monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
+    monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
     # Load all projects using the current API
     config_dir = "tests/fixtures/health-check/"
     projects, _defaults = load_all_projects(config_dir)
