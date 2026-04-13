@@ -31,6 +31,7 @@ from src.utils import (
 
 if TYPE_CHECKING:
     from src.models import ProjectConfig
+    from src.models.defaults import DefaultsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ def _load_and_filter_projects(
     config_dir: str,
     project_filter: str | None,
     state_store: YamlFileStateStore | None = None,
-) -> tuple[list[ProjectConfig], list[ProjectConfig], dict]:
+) -> tuple[list[ProjectConfig], list[ProjectConfig], DefaultsConfig]:
     """Load all projects from config and filter if requested.
 
     Returns:
@@ -117,14 +118,14 @@ def _build_external_network_map(
 
 def _resolve_default_external_network(
     net_map: dict[str, str],
-    defaults: dict,
+    defaults: DefaultsConfig,
 ) -> str:
     """Pick the default external network from the pre-built map.
 
     Returns:
         External network ID or empty string if not resolvable.
     """
-    configured_name = defaults.get("external_network_name", "")
+    configured_name = defaults.external_network_name
     if configured_name:
         net_id = net_map.get(configured_name)
         if net_id is None:
@@ -150,8 +151,7 @@ def _resolve_default_external_network(
     if len(unique_ids) > 1:
         names = ", ".join(k for k, v in net_map.items() if k != v)
         logger.warning(
-            "Multiple external networks found [%s] — set 'external_network_name'"
-            " in defaults.yaml to pick one",
+            "Multiple external networks found [%s] — set 'external_network_name'" " in defaults.yaml to pick one",
             names,
         )
     else:
@@ -163,7 +163,7 @@ def _resolve_default_external_network(
 def _resolve_federation_context(
     conn: openstack.connection.Connection,
     config_dir: str,
-    defaults: dict,
+    defaults: DefaultsConfig,
     all_projects: list[ProjectConfig],
 ) -> tuple[list, bool, list]:
     """Resolve federation mapping and static rules.
@@ -172,7 +172,7 @@ def _resolve_federation_context(
         (current_mapping_rules, mapping_exists, static_mapping_rules) tuple
     """
     logger.info("Resolving federation context...")
-    mapping_id = defaults.get("federation", {}).get("mapping_id")
+    mapping_id = defaults.federation_mapping_id or None
     logger.info("Mapping ID from defaults: %s", mapping_id)
     if mapping_id is None:
         for proj in all_projects:
@@ -206,7 +206,7 @@ def _resolve_federation_context(
 
 def _setup_context(
     config_dir: str,
-    defaults: dict,
+    defaults: DefaultsConfig,
     all_projects: list[ProjectConfig],
     *,
     dry_run: bool,
@@ -250,19 +250,15 @@ def _setup_context(
         ctx.external_network_map = net_map
         ctx.external_net_id = _resolve_default_external_network(net_map, defaults)
         if not ctx.external_net_id:
-            logger.warning(
-                "No external network resolved — routers will be created without an external gateway"
-            )
+            logger.warning("No external network resolved — routers will be created without an external gateway")
     except Exception as exc:
         logger.exception("Failed to look up external network")
         msg = "Failed to look up external network"
         raise ProvisionerError(msg) from exc
 
     try:
-        configured_subnet = defaults.get("external_network_subnet", "")
-        ctx.external_subnet_id = resolve_external_subnet(
-            conn, ctx.external_net_id, configured_subnet
-        )
+        configured_subnet = defaults.external_network_subnet
+        ctx.external_subnet_id = resolve_external_subnet(conn, ctx.external_net_id, configured_subnet)
         if ctx.external_net_id and not ctx.external_subnet_id:
             logger.warning(
                 "External network resolved but no subnet selected — "
@@ -321,10 +317,7 @@ def _print_summary(ctx: SharedContext, *, dry_run: bool) -> int:
     failed = counts[ActionStatus.FAILED]
     deleted = counts[ActionStatus.DELETED]
 
-    print(
-        f"\n{created} created, {updated} updated, {deleted} deleted,"
-        f" {skipped} skipped, {failed} failed"
-    )
+    print(f"\n{created} created, {updated} updated, {deleted} deleted," f" {skipped} skipped, {failed} failed")
 
     if ctx.failed_projects:
         print(f"Failed projects: {', '.join(ctx.failed_projects)}", file=sys.stderr)
