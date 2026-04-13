@@ -14,7 +14,7 @@ $(VENV):
 	python -m venv $(VENV)
 
 fmt:
-	$(RUFF) format src/ tests/
+	$(VENV)/bin/black src/ tests/
 	$(RUFF) check --fix src/ tests/
 
 lint:
