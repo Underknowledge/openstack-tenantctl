@@ -18,9 +18,7 @@ def test_version_not_dev_in_release() -> None:
     """Installed package should not have -dev suffix."""
     # In CI, after installation, version should be X.Y.Z not X.Y.Z-dev
     if __version__ != "0.0.0-dev":
-        assert not __version__.endswith(
-            "-dev"
-        ), f"Release version should not end with -dev: {__version__}"
+        assert not __version__.endswith("-dev"), f"Release version should not end with -dev: {__version__}"
 
 
 def test_version_accessible() -> None:

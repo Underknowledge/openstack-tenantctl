@@ -229,9 +229,7 @@ class TestFullRoundTrip:
         ]
         assert cfg.released_fips == []
         assert cfg.router_ips == [
-            RouterIpEntry(
-                id="r-1", name="testproject-router", external_ip="10.0.0.100"
-            ),
+            RouterIpEntry(id="r-1", name="testproject-router", external_ip="10.0.0.100"),
         ]
         assert cfg.released_router_ips == []
 
@@ -244,9 +242,7 @@ class TestFullRoundTrip:
 class TestMinimalConfig:
     """Verify that a minimal config (no optional sections) produces correct defaults."""
 
-    def test_optional_sections_are_none(
-        self, minimal_project_dict: dict[str, Any]
-    ) -> None:
+    def test_optional_sections_are_none(self, minimal_project_dict: dict[str, Any]) -> None:
         cfg = ProjectConfig.from_dict(minimal_project_dict)
 
         assert cfg.name == "minimal"
@@ -370,17 +366,12 @@ class TestDataclassReplace:
         assert absent.state == ProjectState.ABSENT
         assert cfg.state == ProjectState.PRESENT
 
-    def test_replace_group_role_assignments_to_absent(
-        self, full_project_dict: dict[str, Any]
-    ) -> None:
+    def test_replace_group_role_assignments_to_absent(self, full_project_dict: dict[str, Any]) -> None:
         """Simulate the reconciler's revoke pattern for absent state."""
         cfg = ProjectConfig.from_dict(full_project_dict)
         revoked = dataclasses.replace(
             cfg,
-            group_role_assignments=[
-                dataclasses.replace(entry, state="absent")
-                for entry in cfg.group_role_assignments
-            ],
+            group_role_assignments=[dataclasses.replace(entry, state="absent") for entry in cfg.group_role_assignments],
         )
 
         assert all(e.state == "absent" for e in revoked.group_role_assignments)
@@ -388,9 +379,7 @@ class TestDataclassReplace:
 
     def test_replace_router_ips(self, full_project_dict: dict[str, Any]) -> None:
         cfg = ProjectConfig.from_dict(full_project_dict)
-        new_entry = RouterIpEntry(
-            id="r-new", name="new-router", external_ip="10.0.0.200"
-        )
+        new_entry = RouterIpEntry(id="r-new", name="new-router", external_ip="10.0.0.200")
         updated = dataclasses.replace(
             cfg,
             router_ips=[new_entry],
@@ -413,9 +402,7 @@ class TestFrozenEnforcement:
     dataclass implementation multiple times.
     """
 
-    def test_project_config_is_frozen(
-        self, minimal_project_dict: dict[str, Any]
-    ) -> None:
+    def test_project_config_is_frozen(self, minimal_project_dict: dict[str, Any]) -> None:
         """Representative test: frozen dataclasses reject attribute mutation."""
         cfg = ProjectConfig.from_dict(minimal_project_dict)
 
@@ -444,9 +431,7 @@ class TestSubnetConfigFromDict:
         # Verify ALL 5 fields
         assert subnet.cidr == "10.0.0.0/24"
         assert subnet.gateway_ip == "10.0.0.1"
-        assert subnet.allocation_pools == [
-            AllocationPool(start="10.0.0.2", end="10.0.0.254")
-        ]
+        assert subnet.allocation_pools == [AllocationPool(start="10.0.0.2", end="10.0.0.254")]
         assert subnet.dns_nameservers == ["1.1.1.1"]
         assert subnet.enable_dhcp is False
 
@@ -1218,9 +1203,7 @@ class TestProjectConfigValidate:
                 "subnet": {
                     "cidr": "192.168.1.0/24",
                     "gateway_ip": "192.168.1.254",
-                    "allocation_pools": [
-                        {"start": "192.168.1.1", "end": "192.168.1.253"}
-                    ],
+                    "allocation_pools": [{"start": "192.168.1.1", "end": "192.168.1.253"}],
                 },
             },
         }
@@ -1254,9 +1237,7 @@ class TestProjectConfigValidate:
 
     def test_bad_resource_prefix(self) -> None:
         errors: list[str] = []
-        ProjectConfig.validate(
-            self._minimal(resource_prefix="BAD-PREFIX"), errors, "test"
-        )
+        ProjectConfig.validate(self._minimal(resource_prefix="BAD-PREFIX"), errors, "test")
         assert len(errors) == 1
         assert "resource_prefix" in errors[0]
         assert "invalid" in errors[0]
@@ -1295,9 +1276,7 @@ class TestProjectConfigValidate:
 
     def test_reclaim_non_boolean(self) -> None:
         errors: list[str] = []
-        ProjectConfig.validate(
-            self._minimal(reclaim_floating_ips="yes"), errors, "test"
-        )
+        ProjectConfig.validate(self._minimal(reclaim_floating_ips="yes"), errors, "test")
         assert len(errors) == 1
         assert "must be a boolean" in errors[0]
         assert "reclaim_floating_ips" in errors[0]

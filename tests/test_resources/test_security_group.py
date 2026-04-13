@@ -439,15 +439,11 @@ class TestConflictExceptionHandling:
         assert shared_ctx.conn.network.create_security_group_rule.call_count == 2
 
         # Verify first rule was the ICMP rule (succeeded)
-        first_call_kwargs = (
-            shared_ctx.conn.network.create_security_group_rule.call_args_list[0][1]
-        )
+        first_call_kwargs = shared_ctx.conn.network.create_security_group_rule.call_args_list[0][1]
         assert first_call_kwargs["protocol"] == "icmp"
 
         # Verify second rule was the SSH rule (conflicted)
-        second_call_kwargs = (
-            shared_ctx.conn.network.create_security_group_rule.call_args_list[1][1]
-        )
+        second_call_kwargs = shared_ctx.conn.network.create_security_group_rule.call_args_list[1][1]
         assert second_call_kwargs["protocol"] == "tcp"
         assert second_call_kwargs["port_range_min"] == 22
 

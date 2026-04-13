@@ -94,9 +94,7 @@ class SharedContext:
     external_net_id: str = ""
     external_subnet_id: str = ""
     external_network_map: dict[str, str] = field(default_factory=dict)
-    _resolved_external_networks: dict[tuple[str, str], tuple[str, str]] = field(
-        default_factory=dict
-    )
+    _resolved_external_networks: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
     current_mapping_rules: list[dict[str, Any]] = field(default_factory=list)
     mapping_exists: bool = False
     static_mapping_rules: list[dict[str, Any]] = field(default_factory=list)
@@ -164,9 +162,7 @@ def _make_before_sleep(
     return _before_sleep
 
 
-def retry(
-    max_attempts: int = 5, backoff_base: float = 2.0
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def retry(max_attempts: int = 5, backoff_base: float = 2.0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Retry decorator with exponential backoff for transient OpenStack errors.
 
     Retries on:
@@ -184,9 +180,7 @@ def retry(
 
 
 @retry()
-def find_network(
-    conn: openstack.connection.Connection, net_name: str, project_id: str
-) -> Network | None:
+def find_network(conn: openstack.connection.Connection, net_name: str, project_id: str) -> Network | None:
     """Look up a network by name scoped to project_id.
 
     Args:
@@ -304,8 +298,7 @@ def resolve_external_subnet(
         # Nudge to use ID if name was provided
         if configured_subnet != str(subnet.id):
             log.info(
-                "Resolved external subnet '%s' -> %s (%s). "
-                "Tip: Use ID '%s' in config to skip name lookup",
+                "Resolved external subnet '%s' -> %s (%s). " "Tip: Use ID '%s' in config to skip name lookup",
                 configured_subnet,
                 subnet.id,
                 subnet.cidr,
@@ -344,9 +337,7 @@ def resolve_external_subnet(
     subnet_id = str(chosen.id)
     label = "first IPv4" if ipv4_subnets else "first"
 
-    subnet_list = "\n".join(
-        f"  - Name: {s.name or 'unnamed':20} | ID: {s.id} | CIDR: {s.cidr}" for s in subnets
-    )
+    subnet_list = "\n".join(f"  - Name: {s.name or 'unnamed':20} | ID: {s.id} | CIDR: {s.cidr}" for s in subnets)
     log.warning(
         "Multiple external subnets found, auto-selected %s: %s (%s).\n"
         "Available subnets:\n%s\n"
@@ -428,9 +419,7 @@ def resolve_project_external_network(
         )
 
         if ctx.conn and external_net_id:
-            resolved_subnet_id = resolve_external_subnet(
-                ctx.conn, external_net_id, cfg.external_network_subnet
-            )
+            resolved_subnet_id = resolve_external_subnet(ctx.conn, external_net_id, cfg.external_network_subnet)
             if resolved_subnet_id:
                 external_subnet_id = resolved_subnet_id
                 log.info(

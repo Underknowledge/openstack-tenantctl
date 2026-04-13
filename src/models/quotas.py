@@ -43,9 +43,7 @@ class QuotaConfig:
         compute_dict: dict[str, int] = {}
         for key, val in data.get("compute", {}).items():
             if key in RAM_FIELDS:
-                compute_dict[key] = parse_quota_value(
-                    val, "MB", f"compute.{key}", errors, "from_dict"
-                )
+                compute_dict[key] = parse_quota_value(val, "MB", f"compute.{key}", errors, "from_dict")
             elif key == RAM_GIB_ALIAS:
                 if isinstance(val, int) and val >= -1:
                     compute_dict[RAM_GIB_ALIAS] = -1 if val == -1 else val * _GIB_TO_MIB
@@ -67,9 +65,7 @@ class QuotaConfig:
         block_storage_dict: dict[str, int] = {}
         for key, val in data.get("block_storage", {}).items():
             if key in STORAGE_FIELDS:
-                block_storage_dict[key] = parse_quota_value(
-                    val, "GB", f"block_storage.{key}", errors, "from_dict"
-                )
+                block_storage_dict[key] = parse_quota_value(val, "GB", f"block_storage.{key}", errors, "from_dict")
             elif isinstance(val, int):
                 block_storage_dict[key] = val
 
@@ -95,10 +91,7 @@ class QuotaConfig:
 
         for section_key, section_val in data.items():
             if not isinstance(section_val, dict):
-                errors.append(
-                    f"{label}: quotas.{section_key} must be a mapping, "
-                    f"got {type(section_val).__name__}"
-                )
+                errors.append(f"{label}: quotas.{section_key} must be a mapping, " f"got {type(section_val).__name__}")
                 continue
 
             for qkey, qval in section_val.items():
@@ -108,9 +101,7 @@ class QuotaConfig:
                     target_dict = validated_compute
                     if qkey in RAM_FIELDS:
                         # Field supports units - use parser
-                        parsed_value = parse_quota_value(
-                            qval, "MB", f"{section_key}.{qkey}", errors, label
-                        )
+                        parsed_value = parse_quota_value(qval, "MB", f"{section_key}.{qkey}", errors, label)
                         target_dict[qkey] = parsed_value
                     elif qkey == RAM_GIB_ALIAS:
                         # Convenience alias: plain GiB integer → MiB
@@ -146,9 +137,7 @@ class QuotaConfig:
                     target_dict = validated_block_storage
                     if qkey in STORAGE_FIELDS:
                         # Field supports units - use parser
-                        parsed_value = parse_quota_value(
-                            qval, "GB", f"{section_key}.{qkey}", errors, label
-                        )
+                        parsed_value = parse_quota_value(qval, "GB", f"{section_key}.{qkey}", errors, label)
                         target_dict[qkey] = parsed_value
                     else:
                         # Field does not support units - validate as integer

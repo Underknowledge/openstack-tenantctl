@@ -207,9 +207,7 @@ def _reconcile_absent(cfg: ProjectConfig, ctx: SharedContext) -> None:
     if cfg.group_role_assignments:
         revoke_cfg = dataclasses.replace(
             cfg,
-            group_role_assignments=[
-                dataclasses.replace(entry, state="absent") for entry in cfg.group_role_assignments
-            ],
+            group_role_assignments=[dataclasses.replace(entry, state="absent") for entry in cfg.group_role_assignments],
         )
         ensure_group_role_assignments(revoke_cfg, project_id, ctx)
 

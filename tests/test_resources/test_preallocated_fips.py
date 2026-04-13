@@ -126,11 +126,7 @@ class TestScaleUpAndDown:
         assert call("proj-123", floating_ips=3) in quota_calls
 
         # State persisted with all 3 FIPs (existing + new).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 1
         written_fips = save_calls[0][0][2]
         assert len(written_fips) == 3
@@ -159,23 +155,14 @@ class TestScaleUpAndDown:
 
         # Verify delete_ip called for ONLY the unused FIPs (not the in-use one).
         assert shared_ctx.conn.network.delete_ip.call_count == 2
-        deleted_ids = {
-            call_args[0][0]
-            for call_args in shared_ctx.conn.network.delete_ip.call_args_list
-        }
+        deleted_ids = {call_args[0][0] for call_args in shared_ctx.conn.network.delete_ip.call_args_list}
         assert deleted_ids == {"id-2", "id-3"}
 
         # Quota set to desired (1).
-        shared_ctx.conn.network.update_quota.assert_called_with(
-            "proj-123", floating_ips=1
-        )
+        shared_ctx.conn.network.update_quota.assert_called_with("proj-123", floating_ips=1)
 
         # State persisted with only the in-use FIP (id-1).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 1
         written_fips = save_calls[0][0][2]
         assert len(written_fips) == 1
@@ -204,25 +191,17 @@ class TestScaleUpAndDown:
 
         # Check for both failure types
         in_use_failures = [a for a in failed if a.resource_type == "preallocated_fip"]
-        quota_failures = [
-            a for a in failed if a.resource_type == "preallocated_fip_quota"
-        ]
+        quota_failures = [a for a in failed if a.resource_type == "preallocated_fip_quota"]
         assert len(in_use_failures) == 1
         assert len(quota_failures) == 1
         assert "1 in-use" in in_use_failures[0].details
         assert "must free" in quota_failures[0].details
 
         # Quota set proactively to max(desired=1, remaining=2) = 2.
-        shared_ctx.conn.network.update_quota.assert_called_with(
-            "proj-123", floating_ips=2
-        )
+        shared_ctx.conn.network.update_quota.assert_called_with("proj-123", floating_ips=2)
 
         # State persisted with 2 remaining FIPs (both in-use).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written_fips = save_calls[-1][0][2]
         assert len(written_fips) == 2
 
@@ -246,9 +225,7 @@ class TestScaleUpAndDown:
         assert len(failed) == 2
 
         in_use_failures = [a for a in failed if a.resource_type == "preallocated_fip"]
-        quota_failures = [
-            a for a in failed if a.resource_type == "preallocated_fip_quota"
-        ]
+        quota_failures = [a for a in failed if a.resource_type == "preallocated_fip_quota"]
         assert len(in_use_failures) == 1
         assert len(quota_failures) == 1
         assert "2 in-use" in in_use_failures[0].details
@@ -256,16 +233,10 @@ class TestScaleUpAndDown:
         shared_ctx.conn.network.delete_ip.assert_not_called()
 
         # Quota set proactively to max(desired=1, remaining=3) = 3.
-        shared_ctx.conn.network.update_quota.assert_called_with(
-            "proj-123", floating_ips=3
-        )
+        shared_ctx.conn.network.update_quota.assert_called_with("proj-123", floating_ips=3)
 
         # State persisted with all 3 (can't delete any).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written_fips = save_calls[-1][0][2]
         assert len(written_fips) == 3
 
@@ -285,9 +256,7 @@ class TestScaleUpAndDown:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.SKIPPED
         assert "already allocated" in actions[0].details
-        shared_ctx.conn.network.update_quota.assert_called_once_with(
-            "proj-123", floating_ips=2
-        )
+        shared_ctx.conn.network.update_quota.assert_called_once_with("proj-123", floating_ips=2)
         shared_ctx.conn.network.create_ip.assert_not_called()
         shared_ctx.conn.network.delete_ip.assert_not_called()
 
@@ -313,11 +282,7 @@ class TestScaleUpAndDown:
         assert "already allocated" in actions[0].details
 
         # FIPs persisted to state (self-healing).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 1
         written_fips = save_calls[0][0][2]
         assert len(written_fips) == 2
@@ -325,11 +290,7 @@ class TestScaleUpAndDown:
         assert written_ids == {"id-1", "id-2"}
 
         # FIP tracking snapshot also persisted.
-        snapshot_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["fip_tracking_snapshot"]
-        ]
+        snapshot_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["fip_tracking_snapshot"]]
         assert len(snapshot_calls) == 1
         snapshot = snapshot_calls[0][0][2]
         assert "timestamp" in snapshot
@@ -358,11 +319,7 @@ class TestScaleUpAndDown:
         assert "already allocated" in actions[0].details
 
         # No FIPs persisted (tracking disabled).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 0
 
     def test_steady_state_skips_persist_when_ids_match(
@@ -392,19 +349,11 @@ class TestScaleUpAndDown:
         assert "already allocated" in actions[0].details
 
         # No FIPs persisted (IDs already match).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 0
 
         # No snapshot persisted either.
-        snapshot_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["fip_tracking_snapshot"]
-        ]
+        snapshot_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["fip_tracking_snapshot"]]
         assert len(snapshot_calls) == 0
 
     def test_scale_from_zero_to_n(
@@ -437,11 +386,7 @@ class TestScaleUpAndDown:
         assert call("proj-123", floating_ips=3) in quota_calls
 
         # State persisted with all 3 FIPs.
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written = save_calls[-1][0][2]
         assert len(written) == 3
 
@@ -710,11 +655,7 @@ class TestDriftReconciliation:
         assert actions[0].name == "10.0.0.3"
 
         # Persisted with both original + adopted (verifies adoption merged into config).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 1
         written = save_calls[0][0][2]
         assert len(written) == 2
@@ -764,9 +705,7 @@ class TestDriftReconciliation:
         assert actions[0].name == "10.0.0.2"
 
         # Quota raised to allow reclamation.
-        shared_ctx.conn.network.update_quota.assert_called_once_with(
-            "proj-123", floating_ips=3
-        )
+        shared_ctx.conn.network.update_quota.assert_called_once_with("proj-123", floating_ips=3)
 
         # create_ip called with specific address (10.0.0.2 from missing entry).
         shared_ctx.conn.network.create_ip.assert_called_once_with(
@@ -777,11 +716,7 @@ class TestDriftReconciliation:
         )
 
         # preallocated_fips persisted: id-1 surviving + id-new reclaimed.
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(locked_writes) == 1
         written = locked_writes[0][0][2]
         written_ids = {f["id"] for f in written}
@@ -794,11 +729,7 @@ class TestDriftReconciliation:
         assert reclaimed_entry["created_at"] == "2026-01-15T12:00:00Z"
 
         # No released_fips written (reclamation succeeded).
-        released_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_fips"]
-        ]
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
         assert len(released_writes) == 0
 
     def test_reclaim_conflict(
@@ -818,9 +749,7 @@ class TestDriftReconciliation:
         ]
         os_fips = [_make_fip("id-1", "10.0.0.1")]
 
-        shared_ctx.conn.network.create_ip.side_effect = (
-            openstack.exceptions.ConflictException(message="Conflict")
-        )
+        shared_ctx.conn.network.create_ip.side_effect = openstack.exceptions.ConflictException(message="Conflict")
 
         raw_fips = [
             {"id": "id-1", "address": "10.0.0.1"},
@@ -848,11 +777,7 @@ class TestDriftReconciliation:
         assert actions[0].name == "10.0.0.2"
 
         # released_fips persisted with last-known tracking info.
-        released_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_fips"]
-        ]
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
         assert len(released_writes) == 1
         released = released_writes[0][0][2]
         assert len(released) == 1
@@ -865,11 +790,7 @@ class TestDriftReconciliation:
         assert released[0]["device_owner"] == "compute:nova"
 
         # preallocated_fips only has id-1 (id-2 removed and released).
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(locked_writes) == 1
         written = locked_writes[0][0][2]
         assert len(written) == 1
@@ -917,21 +838,13 @@ class TestDriftReconciliation:
         assert failed[0].name == "10.0.0.3"
 
         # preallocated_fips: id-1 + id-2-new (id-3 lost).
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written = locked_writes[-1][0][2]
         written_ids = {f["id"] for f in written}
         assert written_ids == {"id-1", "id-2-new"}
 
         # released_fips: only 10.0.0.3.
-        released_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_fips"]
-        ]
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
         assert len(released_writes) == 1
         released = released_writes[0][0][2]
         assert len(released) == 1
@@ -1009,17 +922,13 @@ class TestDriftReconciliation:
         ]
         os_fips = [_make_fip("id-1", "10.0.0.1")]
 
-        shared_ctx.conn.network.create_ip.side_effect = (
-            openstack.exceptions.ConflictException(message="Conflict")
-        )
+        shared_ctx.conn.network.create_ip.side_effect = openstack.exceptions.ConflictException(message="Conflict")
 
         raw_fips = [
             {"id": "id-1", "address": "10.0.0.1"},
             {"id": "id-2", "address": "10.0.0.2"},
         ]
-        cfg = _cfg_with_locked(
-            2, raw_fips, released_fips=existing_released, reclaim_floating_ips=True
-        )
+        cfg = _cfg_with_locked(2, raw_fips, released_fips=existing_released, reclaim_floating_ips=True)
         _reconcile_fip_drift(
             cfg,
             "proj-123",
@@ -1031,11 +940,7 @@ class TestDriftReconciliation:
         )
 
         # released_fips persisted with old + new (verifies merge, not overwrite).
-        released_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_fips"]
-        ]
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
         assert len(released_writes) == 1
         all_released = released_writes[0][0][2]
         assert len(all_released) == 2
@@ -1085,24 +990,17 @@ class TestDriftReconciliation:
         assert all("reclaimed" in a.details for a in actions)
 
         # Quota raised to desired + missing (2 + 2 = 4) to allow reclamation.
-        shared_ctx.conn.network.update_quota.assert_called_once_with(
-            "proj-123", floating_ips=4
-        )
+        shared_ctx.conn.network.update_quota.assert_called_once_with("proj-123", floating_ips=4)
 
         # Both create_ip calls with specific addresses.
         assert shared_ctx.conn.network.create_ip.call_count == 2
         addresses_requested = {
-            c.kwargs["floating_ip_address"]
-            for c in shared_ctx.conn.network.create_ip.call_args_list
+            c.kwargs["floating_ip_address"] for c in shared_ctx.conn.network.create_ip.call_args_list
         }
         assert addresses_requested == {"10.0.0.1", "10.0.0.2"}
 
         # preallocated_fips persisted with new IDs.
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written = locked_writes[-1][0][2]
         written_ids = {f["id"] for f in written}
         assert written_ids == {"id-new-1", "id-new-2"}
@@ -1136,11 +1034,7 @@ class TestDriftReconciliation:
         assert "reclaimed" in actions[0].details
 
         # State persisted with status=DOWN (verifies non-ACTIVE status accepted).
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written = locked_writes[-1][0][2]
         assert len(written) == 1
         assert written[0]["status"] == "DOWN"
@@ -1201,11 +1095,7 @@ class TestDriftReclamationDisabled:
         shared_ctx.conn.network.update_quota.assert_not_called()
 
         # released_fips persisted with last-known tracking.
-        released_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_fips"]
-        ]
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
         assert len(released_writes) == 1
         released = released_writes[0][0][2]
         assert len(released) == 1
@@ -1218,11 +1108,7 @@ class TestDriftReclamationDisabled:
         assert released[0]["device_owner"] == "compute:nova"
 
         # preallocated_fips trimmed to only id-1.
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(locked_writes) == 1
         written = locked_writes[0][0][2]
         assert len(written) == 1
@@ -1304,21 +1190,13 @@ class TestDriftReclamationDisabled:
         shared_ctx.conn.network.create_ip.assert_not_called()
 
         # released_fips has all 3 entries.
-        released_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_fips"]
-        ]
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
         assert len(released_writes) == 1
         released = released_writes[0][0][2]
         assert len(released) == 3
 
         # preallocated_fips is empty.
-        locked_writes = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         written = locked_writes[-1][0][2]
         assert len(written) == 0
 
@@ -1347,9 +1225,7 @@ class TestEdgeCases:
         ]
 
         # Retry decorator will exhaust retries and propagate the exception.
-        with pytest.raises(
-            openstack.exceptions.HttpException, match="Service unavailable"
-        ):
+        with pytest.raises(openstack.exceptions.HttpException, match="Service unavailable"):
             ensure_preallocated_fips(_cfg(3), "proj-123", shared_ctx)
 
         # First FIP was created (1 call), then 5 failed attempts on second FIP.
@@ -1376,20 +1252,14 @@ class TestEdgeCases:
         shared_ctx.conn.network.update_quota.side_effect = quota_side_effect
 
         # Exception propagates after retry exhaustion.
-        with pytest.raises(
-            openstack.exceptions.HttpException, match="Quota service error"
-        ):
+        with pytest.raises(openstack.exceptions.HttpException, match="Quota service error"):
             ensure_preallocated_fips(_cfg(2), "proj-123", shared_ctx)
 
         # FIP was created.
         shared_ctx.conn.network.create_ip.assert_called_once()
 
         # State was persisted before quota failure (defensive persistence).
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["preallocated_fips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
         assert len(save_calls) == 1
 
     def test_quota_below_usage_race_condition(
@@ -1409,9 +1279,7 @@ class TestEdgeCases:
             fip_quota = kwargs.get("floating_ips")
             if fip_quota == 3:
                 # Race: usage increased between list and quota set.
-                raise openstack.exceptions.BadRequestException(
-                    message="Quota below usage"
-                )
+                raise openstack.exceptions.BadRequestException(message="Quota below usage")
             # Fallback to actual usage (4) succeeds.
             return
 
@@ -1428,23 +1296,16 @@ class TestEdgeCases:
         failed = [a for a in actions if a.status == ActionStatus.FAILED]
         assert len(failed) == 2
 
-        quota_failures = [
-            a for a in failed if a.resource_type == "preallocated_fip_quota"
-        ]
+        quota_failures = [a for a in failed if a.resource_type == "preallocated_fip_quota"]
         assert len(quota_failures) == 1
         assert "must free" in quota_failures[0].details
         # Fallback quota was 4 (from get_quota), not 3 (max of desired/actual).
         assert "set to 4" in quota_failures[0].details
 
         # get_quota called after BadRequestException.
-        shared_ctx.conn.network.get_quota.assert_called_once_with(
-            "proj-123", details=True
-        )
+        shared_ctx.conn.network.get_quota.assert_called_once_with("proj-123", details=True)
         # Final quota set to 4 (fallback usage).
-        assert (
-            call("proj-123", floating_ips=4)
-            in shared_ctx.conn.network.update_quota.call_args_list
-        )
+        assert call("proj-123", floating_ips=4) in shared_ctx.conn.network.update_quota.call_args_list
 
 
 # ---------------------------------------------------------------------------
@@ -1471,9 +1332,7 @@ class TestQuotaSetBadRequestFallback:
             fip_quota = kwargs.get("floating_ips")
             if fip_quota == 3:
                 # Race: usage increased between list and quota set.
-                raise openstack.exceptions.BadRequestException(
-                    message="Quota below usage"
-                )
+                raise openstack.exceptions.BadRequestException(message="Quota below usage")
             # Fallback to actual usage (4) succeeds.
             return
 
@@ -1490,23 +1349,16 @@ class TestQuotaSetBadRequestFallback:
         failed = [a for a in actions if a.status == ActionStatus.FAILED]
         assert len(failed) == 2
 
-        quota_failures = [
-            a for a in failed if a.resource_type == "preallocated_fip_quota"
-        ]
+        quota_failures = [a for a in failed if a.resource_type == "preallocated_fip_quota"]
         assert len(quota_failures) == 1
         assert "must free" in quota_failures[0].details
         # Fallback quota was 4 (from get_quota), not 3 (max of desired/actual).
         assert "set to 4" in quota_failures[0].details
 
         # get_quota called after BadRequestException.
-        shared_ctx.conn.network.get_quota.assert_called_once_with(
-            "proj-123", details=True
-        )
+        shared_ctx.conn.network.get_quota.assert_called_once_with("proj-123", details=True)
         # Final quota set to 4 (fallback usage).
-        assert (
-            call("proj-123", floating_ips=4)
-            in shared_ctx.conn.network.update_quota.call_args_list
-        )
+        assert call("proj-123", floating_ips=4) in shared_ctx.conn.network.update_quota.call_args_list
 
 
 class TestPerProjectFipSubnetOverride:
@@ -1743,9 +1595,7 @@ class TestDetectRouterGateway:
         router = _make_router(
             external_gateway_info={
                 "network_id": "router-net-id",
-                "external_fixed_ips": [
-                    {"subnet_id": "router-subnet-id", "ip_address": "10.0.0.1"}
-                ],
+                "external_fixed_ips": [{"subnet_id": "router-subnet-id", "ip_address": "10.0.0.1"}],
             }
         )
         mock_conn.network.routers.return_value = [router]
@@ -1798,9 +1648,7 @@ class TestFipUsesRouterGateway:
         router = _make_router(
             external_gateway_info={
                 "network_id": "router-ext-net",
-                "external_fixed_ips": [
-                    {"subnet_id": "router-subnet", "ip_address": "10.1.0.1"}
-                ],
+                "external_fixed_ips": [{"subnet_id": "router-subnet", "ip_address": "10.1.0.1"}],
             }
         )
         shared_ctx.conn.network.routers.return_value = [router]
@@ -1830,9 +1678,7 @@ class TestFipUsesRouterGateway:
         router = _make_router(
             external_gateway_info={
                 "network_id": "ext-net-id-123",
-                "external_fixed_ips": [
-                    {"subnet_id": "external1-subnet-id", "ip_address": "78.104.208.109"}
-                ],
+                "external_fixed_ips": [{"subnet_id": "external1-subnet-id", "ip_address": "78.104.208.109"}],
             }
         )
         shared_ctx.conn.network.routers.return_value = [router]
@@ -1860,9 +1706,7 @@ class TestFipUsesRouterGateway:
         router = _make_router(
             external_gateway_info={
                 "network_id": "ext-net-id-123",
-                "external_fixed_ips": [
-                    {"subnet_id": "ext-subnet-123", "ip_address": "10.0.0.1"}
-                ],
+                "external_fixed_ips": [{"subnet_id": "ext-subnet-123", "ip_address": "10.0.0.1"}],
             }
         )
         shared_ctx.conn.network.routers.return_value = [router]

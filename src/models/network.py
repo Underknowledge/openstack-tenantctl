@@ -40,9 +40,7 @@ class SubnetConfig:
         return cls(
             cidr=data["cidr"],
             gateway_ip=data.get("gateway_ip", ""),
-            allocation_pools=[
-                AllocationPool.from_dict(p) for p in data.get("allocation_pools", [])
-            ],
+            allocation_pools=[AllocationPool.from_dict(p) for p in data.get("allocation_pools", [])],
             dns_nameservers=data.get("dns_nameservers", []),
             enable_dhcp=data.get("enable_dhcp", data.get("dhcp", True)),
         )
@@ -85,31 +83,21 @@ class SubnetConfig:
                 try:
                     start_ip = ipaddress.ip_address(start_str)
                 except ValueError as exc:
-                    errors.append(
-                        f"{label}: allocation_pools[{idx}].start '{start_str}' is invalid: {exc}"
-                    )
+                    errors.append(f"{label}: allocation_pools[{idx}].start '{start_str}' is invalid: {exc}")
                     continue
                 try:
                     end_ip = ipaddress.ip_address(end_str)
                 except ValueError as exc:
-                    errors.append(
-                        f"{label}: allocation_pools[{idx}].end '{end_str}' is invalid: {exc}"
-                    )
+                    errors.append(f"{label}: allocation_pools[{idx}].end '{end_str}' is invalid: {exc}")
                     continue
                 if start_ip not in network:
                     errors.append(
-                        f"{label}: allocation_pools[{idx}].start "
-                        f"{start_str} is not inside CIDR {cidr_str}"
+                        f"{label}: allocation_pools[{idx}].start " f"{start_str} is not inside CIDR {cidr_str}"
                     )
                 if end_ip not in network:
-                    errors.append(
-                        f"{label}: allocation_pools[{idx}].end "
-                        f"{end_str} is not inside CIDR {cidr_str}"
-                    )
+                    errors.append(f"{label}: allocation_pools[{idx}].end " f"{end_str} is not inside CIDR {cidr_str}")
                 if int(start_ip) > int(end_ip):
-                    errors.append(
-                        f"{label}: allocation_pools[{idx}] start {start_str} > end {end_str}"
-                    )
+                    errors.append(f"{label}: allocation_pools[{idx}] start {start_str} > end {end_str}")
 
         if len(errors) > errors_before:
             return None

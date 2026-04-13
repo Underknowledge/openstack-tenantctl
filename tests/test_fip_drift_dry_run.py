@@ -54,9 +54,7 @@ def test_reconcile_drift_untracked_fips_dry_run_no_modifications(
         FipEntry(id="fip-1", address="10.0.0.1"),
         FipEntry(id="fip-2", address="10.0.0.2"),
     ]
-    project_cfg_with_fips = dataclasses.replace(
-        project_cfg_with_fips, preallocated_fips=config_fips
-    )
+    project_cfg_with_fips = dataclasses.replace(project_cfg_with_fips, preallocated_fips=config_fips)
 
     openstack_fips = [
         MagicMock(id="fip-1", floating_ip_address="10.0.0.1", port_id=None),
@@ -254,9 +252,7 @@ def test_reconcile_drift_no_drift_detected_dry_run(
         FipEntry(id="fip-1", address="10.0.0.1"),
         FipEntry(id="fip-2", address="10.0.0.2"),
     ]
-    project_cfg_with_fips = dataclasses.replace(
-        project_cfg_with_fips, preallocated_fips=config_fips
-    )
+    project_cfg_with_fips = dataclasses.replace(project_cfg_with_fips, preallocated_fips=config_fips)
 
     openstack_fips = [
         MagicMock(id="fip-1", floating_ip_address="10.0.0.1", port_id=None),

@@ -120,9 +120,7 @@ class TestRetryExhaustion:
         def limited_func(m: MagicMock) -> str:
             return m()
 
-        with pytest.raises(
-            openstack.exceptions.HttpException, match="Service Unavailable"
-        ):
+        with pytest.raises(openstack.exceptions.HttpException, match="Service Unavailable"):
             limited_func(mock)
         assert mock.call_count == 3
 
@@ -131,9 +129,7 @@ class TestRetryLogging:
     """Verify the log output format matches the expected pattern."""
 
     @patch("tenacity.nap.time")
-    def test_logs_retry_warning(
-        self, mock_sleep: MagicMock, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_logs_retry_warning(self, mock_sleep: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         exc = openstack.exceptions.HttpException(message="Service Unavailable")
         exc.status_code = 503
         mock = MagicMock(side_effect=[exc, "ok"])

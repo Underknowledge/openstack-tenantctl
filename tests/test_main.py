@@ -21,7 +21,7 @@ from src.main import (
     _setup_context,
     main,
 )
-from src.models import ProjectConfig
+from src.models import DefaultsConfig, ProjectConfig
 from src.utils import ActionStatus, ProvisionerError, SharedContext
 
 
@@ -88,32 +88,25 @@ class TestLoadAndFilterProjects:
 
     def test_loads_all_projects_when_no_filter(self, mock_config_dir: Path) -> None:
         """Should load all projects when no filter is specified."""
-        projects, all_projects, defaults = _load_and_filter_projects(
-            str(mock_config_dir), None
-        )
+        projects, all_projects, defaults = _load_and_filter_projects(str(mock_config_dir), None)
 
         assert len(projects) == 2
         assert len(all_projects) == 2
         # Verify both projects are present
         project_names = {p.name for p in projects}
         assert project_names == {"project1", "project2"}
-        # Verify defaults were loaded correctly
-        assert "quotas" in defaults
-        assert defaults["quotas"]["compute"]["cores"] == 10
+        # Verify defaults were loaded as DefaultsConfig
+        assert isinstance(defaults, DefaultsConfig)
 
     def test_filters_to_single_project(self, mock_config_dir: Path) -> None:
         """Should filter to single project when --project is specified."""
-        projects, all_projects, _defaults = _load_and_filter_projects(
-            str(mock_config_dir), "project1"
-        )
+        projects, all_projects, _defaults = _load_and_filter_projects(str(mock_config_dir), "project1")
 
         assert len(projects) == 1
         assert projects[0].name == "project1"
         assert len(all_projects) == 2  # all_projects should still contain both
 
-    def test_raises_when_filtered_project_not_found(
-        self, mock_config_dir: Path
-    ) -> None:
+    def test_raises_when_filtered_project_not_found(self, mock_config_dir: Path) -> None:
         """Should raise ProvisionerError when filtered project doesn't exist."""
         with pytest.raises(ProvisionerError, match="project 'nonexistent' not found"):
             _load_and_filter_projects(str(mock_config_dir), "nonexistent")
@@ -169,7 +162,7 @@ class TestResolveDefaultExternalNetwork:
     def test_returns_configured_network_when_found(self) -> None:
         """Should return network ID when explicit name is in the map."""
         net_map = {"public": "net-123", "net-123": "net-123"}
-        defaults = {"external_network_name": "public"}
+        defaults = DefaultsConfig(external_network_name="public")
 
         result = _resolve_default_external_network(net_map, defaults)
 
@@ -178,7 +171,7 @@ class TestResolveDefaultExternalNetwork:
     def test_returns_empty_when_configured_network_not_found(self) -> None:
         """Should return empty string when explicit name is not in the map."""
         net_map = {"public": "net-123", "net-123": "net-123"}
-        defaults = {"external_network_name": "nonexistent"}
+        defaults = DefaultsConfig(external_network_name="nonexistent")
 
         result = _resolve_default_external_network(net_map, defaults)
 
@@ -187,7 +180,7 @@ class TestResolveDefaultExternalNetwork:
     def test_auto_discovers_when_exactly_one_external_network(self) -> None:
         """Should auto-discover when exactly one external network exists."""
         net_map = {"external": "net-auto", "net-auto": "net-auto"}
-        defaults: dict[str, str] = {}
+        defaults = DefaultsConfig()
 
         result = _resolve_default_external_network(net_map, defaults)
 
@@ -201,7 +194,7 @@ class TestResolveDefaultExternalNetwork:
             "external2": "net-2",
             "net-2": "net-2",
         }
-        defaults: dict[str, str] = {}
+        defaults = DefaultsConfig()
 
         result = _resolve_default_external_network(net_map, defaults)
 
@@ -210,7 +203,7 @@ class TestResolveDefaultExternalNetwork:
     def test_returns_empty_when_no_external_networks(self) -> None:
         """Should return empty when map is empty."""
         net_map: dict[str, str] = {}
-        defaults: dict[str, str] = {}
+        defaults = DefaultsConfig()
 
         result = _resolve_default_external_network(net_map, defaults)
 
@@ -227,7 +220,7 @@ class TestResolveFederationContext:
         mock_mapping.rules = [{"local": [], "remote": []}]
         mock_conn.identity.get_mapping.return_value = mock_mapping
 
-        defaults = {"federation": {"mapping_id": "mapping-123"}}
+        defaults = DefaultsConfig(federation_mapping_id="mapping-123")
         all_projects: list[ProjectConfig] = []
 
         current_rules, mapping_exists, static_rules = _resolve_federation_context(
@@ -243,11 +236,9 @@ class TestResolveFederationContext:
     def test_handles_mapping_not_found(self, mock_config_dir: Path) -> None:
         """Should handle NotFoundException when mapping doesn't exist yet."""
         mock_conn = Mock()
-        mock_conn.identity.get_mapping.side_effect = (
-            openstack.exceptions.NotFoundException
-        )
+        mock_conn.identity.get_mapping.side_effect = openstack.exceptions.NotFoundException
 
-        defaults = {"federation": {"mapping_id": "new-mapping"}}
+        defaults = DefaultsConfig(federation_mapping_id="new-mapping")
         all_projects: list[ProjectConfig] = []
 
         current_rules, mapping_exists, static_rules = _resolve_federation_context(
@@ -268,7 +259,7 @@ class TestResolveFederationContext:
         mock_mapping.rules = []
         mock_conn.identity.get_mapping.return_value = mock_mapping
 
-        defaults: dict[str, Any] = {}
+        defaults = DefaultsConfig()
         all_projects = [
             ProjectConfig.from_dict(
                 {
@@ -279,9 +270,7 @@ class TestResolveFederationContext:
             ),
         ]
 
-        _, mapping_exists, _ = _resolve_federation_context(
-            mock_conn, str(mock_config_dir), defaults, all_projects
-        )
+        _, mapping_exists, _ = _resolve_federation_context(mock_conn, str(mock_config_dir), defaults, all_projects)
 
         assert mapping_exists is True
         mock_conn.identity.get_mapping.assert_called_once_with("proj-mapping")
@@ -289,21 +278,17 @@ class TestResolveFederationContext:
     def test_loads_static_rules(self, mock_config_dir: Path) -> None:
         """Should load static federation rules from JSON file."""
         mock_conn = Mock()
-        mock_conn.identity.get_mapping.side_effect = (
-            openstack.exceptions.NotFoundException
-        )
+        mock_conn.identity.get_mapping.side_effect = openstack.exceptions.NotFoundException
 
         # Add static rules to the file
         static_path = mock_config_dir / "federation_static.json"
         static_data = [{"local": [{"user": {"name": "admin"}}], "remote": []}]
         static_path.write_text(json.dumps(static_data))
 
-        defaults: dict[str, Any] = {}
+        defaults = DefaultsConfig()
         all_projects: list[ProjectConfig] = []
 
-        _, _, static_rules = _resolve_federation_context(
-            mock_conn, str(mock_config_dir), defaults, all_projects
-        )
+        _, _, static_rules = _resolve_federation_context(mock_conn, str(mock_config_dir), defaults, all_projects)
 
         assert static_rules == static_data
 
@@ -311,7 +296,7 @@ class TestResolveFederationContext:
         """Should handle case when no mapping_id is configured anywhere."""
         mock_conn = Mock()
 
-        defaults: dict[str, Any] = {}
+        defaults = DefaultsConfig()
         all_projects = [
             ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "proj1"}),
         ]
@@ -326,16 +311,14 @@ class TestResolveFederationContext:
         # Should not call get_mapping when no mapping_id is found
         mock_conn.identity.get_mapping.assert_not_called()
 
-    def test_skips_projects_without_federation_config(
-        self, mock_config_dir: Path
-    ) -> None:
+    def test_skips_projects_without_federation_config(self, mock_config_dir: Path) -> None:
         """Should skip projects that have federation=None when searching for mapping_id."""
         mock_conn = Mock()
         mock_mapping = Mock()
         mock_mapping.rules = []
         mock_conn.identity.get_mapping.return_value = mock_mapping
 
-        defaults: dict[str, Any] = {}
+        defaults = DefaultsConfig()
         all_projects = [
             ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "proj1"}),
             ProjectConfig.from_dict(
@@ -347,23 +330,19 @@ class TestResolveFederationContext:
             ),
         ]
 
-        _, mapping_exists, _ = _resolve_federation_context(
-            mock_conn, str(mock_config_dir), defaults, all_projects
-        )
+        _, mapping_exists, _ = _resolve_federation_context(mock_conn, str(mock_config_dir), defaults, all_projects)
 
         assert mapping_exists is True
         mock_conn.identity.get_mapping.assert_called_once_with("found-mapping")
 
-    def test_uses_first_project_mapping_id_when_multiple_exist(
-        self, mock_config_dir: Path
-    ) -> None:
+    def test_uses_first_project_mapping_id_when_multiple_exist(self, mock_config_dir: Path) -> None:
         """Should use first project's mapping_id when multiple projects have federation config."""
         mock_conn = Mock()
         mock_mapping = Mock()
         mock_mapping.rules = []
         mock_conn.identity.get_mapping.return_value = mock_mapping
 
-        defaults: dict[str, Any] = {}
+        defaults = DefaultsConfig()
         all_projects = [
             ProjectConfig.from_dict(
                 {
@@ -381,9 +360,7 @@ class TestResolveFederationContext:
             ),
         ]
 
-        _resolve_federation_context(
-            mock_conn, str(mock_config_dir), defaults, all_projects
-        )
+        _resolve_federation_context(mock_conn, str(mock_config_dir), defaults, all_projects)
 
         # Should only call with the first mapping_id found
         mock_conn.identity.get_mapping.assert_called_once_with("first-mapping")
@@ -398,7 +375,7 @@ class TestSetupContext:
             dry_run=True,
             offline=True,
             config_dir=str(mock_config_dir),
-            defaults={},
+            defaults=DefaultsConfig(),
             all_projects=[],
         )
 
@@ -429,7 +406,7 @@ class TestSetupContext:
         ctx = _setup_context(
             dry_run=True,
             config_dir=str(mock_config_dir),
-            defaults={},
+            defaults=DefaultsConfig(),
             all_projects=[],
         )
 
@@ -466,7 +443,7 @@ class TestSetupContext:
         ctx = _setup_context(
             dry_run=False,
             config_dir=str(mock_config_dir),
-            defaults={},
+            defaults=DefaultsConfig(),
             all_projects=[],
         )
 
@@ -478,9 +455,7 @@ class TestSetupContext:
         assert ctx.external_network_map == net_map
         assert ctx.current_mapping_rules == [{"local": [], "remote": []}]
         assert ctx.mapping_exists is True
-        assert ctx.static_mapping_rules == [
-            {"local": [{"user": {"name": "static"}}], "remote": []}
-        ]
+        assert ctx.static_mapping_rules == [{"local": [{"user": {"name": "static"}}], "remote": []}]
         # Verify connection was established
         mock_connect.assert_called_once_with(cloud=None)
         # Verify both resolution functions were called
@@ -508,7 +483,7 @@ class TestSetupContext:
         _setup_context(
             dry_run=False,
             config_dir=str(mock_config_dir),
-            defaults={},
+            defaults=DefaultsConfig(),
             all_projects=[],
             cloud="mycloud",
         )
@@ -516,9 +491,7 @@ class TestSetupContext:
         mock_connect.assert_called_once_with(cloud="mycloud")
 
     @patch("src.main._connect")
-    def test_exits_when_connection_fails(
-        self, mock_connect: Mock, mock_config_dir: Path
-    ) -> None:
+    def test_exits_when_connection_fails(self, mock_connect: Mock, mock_config_dir: Path) -> None:
         """Should raise ProvisionerError when OpenStack connection fails."""
         mock_connect.side_effect = Exception("Connection failed")
 
@@ -526,7 +499,7 @@ class TestSetupContext:
             _setup_context(
                 dry_run=False,
                 config_dir=str(mock_config_dir),
-                defaults={},
+                defaults=DefaultsConfig(),
                 all_projects=[],
             )
 
@@ -546,7 +519,7 @@ class TestSetupContext:
             _setup_context(
                 dry_run=False,
                 config_dir=str(mock_config_dir),
-                defaults={},
+                defaults=DefaultsConfig(),
                 all_projects=[],
             )
 
@@ -570,7 +543,7 @@ class TestSetupContext:
             _setup_context(
                 dry_run=False,
                 config_dir=str(mock_config_dir),
-                defaults={},
+                defaults=DefaultsConfig(),
                 all_projects=[],
             )
 
@@ -593,7 +566,7 @@ class TestSetupContext:
         ctx = _setup_context(
             dry_run=False,
             config_dir=str(mock_config_dir),
-            defaults={},
+            defaults=DefaultsConfig(),
             all_projects=[],
         )
 
@@ -655,9 +628,7 @@ class TestPrintSummary:
         captured = capsys.readouterr()
         assert "2 created, 1 updated, 0 deleted, 1 skipped, 1 failed" in captured.out
 
-    def test_returns_1_when_projects_failed(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_returns_1_when_projects_failed(self, capsys: pytest.CaptureFixture) -> None:
         """Should return exit code 1 when any projects failed."""
         ctx = SharedContext(conn=Mock(), dry_run=False)
         ctx.failed_projects.append("project1")
@@ -690,9 +661,7 @@ class TestPrintSummary:
         captured = capsys.readouterr()
         assert "0 created, 0 updated, 0 deleted, 3 skipped, 0 failed" in captured.out
 
-    def test_returns_1_with_mixed_created_and_failed_actions(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_returns_1_with_mixed_created_and_failed_actions(self, capsys: pytest.CaptureFixture) -> None:
         """Should return exit code 1 when FAILED actions exist in failed_projects."""
         ctx = SharedContext(conn=Mock(), dry_run=False)
         ctx.record(ActionStatus.CREATED, "network", "net1", "created successfully")
@@ -725,7 +694,7 @@ class TestSetupLogging:
         """Should call setup_logging with verbose=1 when -v is specified."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -748,7 +717,7 @@ class TestSetupLogging:
         """Should call setup_logging with verbose=2 when -vv is specified."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -771,7 +740,7 @@ class TestSetupLogging:
         """Should call setup_logging with verbose=0 when no -v flag is specified."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -797,7 +766,7 @@ class TestMainIntegration:
         """Should run in dry-run mode without connecting to OpenStack."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -827,13 +796,11 @@ class TestMainIntegration:
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         proj2 = ProjectConfig.from_dict({"name": "proj2", "resource_prefix": "p2"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1, proj2], {})
+        mock_load.return_value = ([proj1, proj2], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
-        exit_code = main(
-            ["--config-dir", str(mock_config_dir), "--dry-run", "--project", "proj1"]
-        )
+        exit_code = main(["--config-dir", str(mock_config_dir), "--dry-run", "--project", "proj1"])
 
         assert exit_code == 0
         # Verify reconcile was called with ONLY the filtered project
@@ -858,13 +825,11 @@ class TestMainIntegration:
         """Should pass --os-cloud value to _setup_context."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
-        exit_code = main(
-            ["--config-dir", str(mock_config_dir), "--dry-run", "--os-cloud", "mycloud"]
-        )
+        exit_code = main(["--config-dir", str(mock_config_dir), "--dry-run", "--os-cloud", "mycloud"])
 
         assert exit_code == 0
         # Verify cloud= kwarg was passed through to _setup_context
@@ -885,7 +850,7 @@ class TestMainIntegration:
         """Should accept verbosity flags -v and -vv."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -928,7 +893,7 @@ class TestMainIntegration:
         """Should return exit code 1 when any projects fail."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_ctx.failed_projects.append("proj1")
         mock_setup.return_value = mock_ctx
@@ -966,7 +931,7 @@ class TestMainIntegration:
         """Should close connection after reconcile completes."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_conn = Mock()
         mock_ctx = SharedContext(conn=mock_conn, dry_run=False)
         mock_setup.return_value = mock_ctx
@@ -991,7 +956,7 @@ class TestMainIntegration:
         """Should close connection even when reconcile raises exception."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_conn = Mock()
         mock_ctx = SharedContext(conn=mock_conn, dry_run=False)
         mock_setup.return_value = mock_ctx
@@ -1016,7 +981,7 @@ class TestMainIntegration:
         """Should not attempt to close connection when conn is None (dry-run mode)."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -1044,7 +1009,7 @@ class TestStateStoreIntegration:
         """Should pass state_store to load_all_projects for state key resolution."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -1072,7 +1037,7 @@ class TestStateStoreIntegration:
         """Should pass state_store to _setup_context for SharedContext."""
         proj1 = ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"})
         # load_all_projects returns (projects, defaults) 2-tuple
-        mock_load.return_value = ([proj1], {})
+        mock_load.return_value = ([proj1], DefaultsConfig())
         mock_ctx = SharedContext(conn=None, dry_run=True)
         mock_setup.return_value = mock_ctx
 
@@ -1092,16 +1057,14 @@ class TestLoadAndFilterEdgeCases:
     """Edge cases for project loading and filtering."""
 
     @patch("src.main.load_all_projects")
-    def test_filter_returns_empty_list_when_no_match(
-        self, mock_load: Mock, mock_config_dir: Path
-    ) -> None:
+    def test_filter_returns_empty_list_when_no_match(self, mock_load: Mock, mock_config_dir: Path) -> None:
         """Should raise ProvisionerError when filter finds no matching projects."""
         mock_load.return_value = (
             [
                 ProjectConfig.from_dict({"name": "proj1", "resource_prefix": "p1"}),
                 ProjectConfig.from_dict({"name": "proj2", "resource_prefix": "p2"}),
             ],
-            {},
+            DefaultsConfig(),
         )
 
         with pytest.raises(ProvisionerError, match="project 'nonexistent' not found"):
@@ -1117,19 +1080,19 @@ class TestResolveDefaultExternalNetworkEdgeCases:
             "public-network": "net-456",
             "net-456": "net-456",
         }
-        defaults = {"external_network_name": "public-network"}
+        defaults = DefaultsConfig(external_network_name="public-network")
 
         result = _resolve_default_external_network(net_map, defaults)
 
         assert result == "net-456"
 
-    def test_empty_defaults_dict_auto_discovers(self) -> None:
-        """Should auto-discover when defaults dict is empty and map has one network."""
+    def test_empty_defaults_auto_discovers(self) -> None:
+        """Should auto-discover when defaults is empty and map has one network."""
         net_map = {
             "auto-discovered": "net-auto-123",
             "net-auto-123": "net-auto-123",
         }
-        defaults: dict[str, Any] = {}
+        defaults = DefaultsConfig()
 
         result = _resolve_default_external_network(net_map, defaults)
 

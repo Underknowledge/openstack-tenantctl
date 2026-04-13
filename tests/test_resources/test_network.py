@@ -79,9 +79,7 @@ class TestCreateFullStack:
         }
         assert router_kwargs["external_gateway_info"] == expected_gateway
 
-        shared_ctx.conn.network.add_interface_to_router.assert_called_once_with(
-            "router-001", subnet_id="subnet-001"
-        )
+        shared_ctx.conn.network.add_interface_to_router.assert_called_once_with("router-001", subnet_id="subnet-001")
 
 
 class TestSkipExistingNetwork:
@@ -273,11 +271,7 @@ class TestTrackRouterIpsFirstRun:
         assert all("adopted" in a.details for a in actions)
 
         # router_ips persisted via state_store
-        save_calls = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["router_ips"]
-        ]
+        save_calls = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["router_ips"]]
         assert len(save_calls) == 1
         assert save_calls[0][0][2] == [
             {"id": "r1", "name": "router-a", "external_ip": "10.0.0.1"},
@@ -363,11 +357,7 @@ class TestTrackRouterIpsRemovedRouter:
         assert "removed" in actions[0].details
 
         # released_router_ips should be persisted
-        released_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_router_ips"]
-        ]
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
         assert len(released_call) == 1
         released_entries = released_call[0][0][2]
         assert len(released_entries) == 1
@@ -402,11 +392,7 @@ class TestTrackRouterIpsIpChanged:
         assert "10.0.0.99" in actions[0].details
 
         # Old IP released
-        released_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_router_ips"]
-        ]
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
         assert len(released_call) == 1
         assert released_call[0][0][2][0]["address"] == "10.0.0.1"
 
@@ -467,20 +453,12 @@ class TestTrackRouterIpsNoRouters:
         assert actions[0].status == ActionStatus.UPDATED
 
         # router_ips persisted as empty
-        router_ips_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["router_ips"]
-        ]
+        router_ips_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["router_ips"]]
         assert len(router_ips_call) == 1
         assert router_ips_call[0][0][2] == []
 
         # released_router_ips persisted
-        released_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_router_ips"]
-        ]
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
         assert len(released_call) == 1
         assert released_call[0][0][2][0]["address"] == "10.0.0.1"
 
@@ -513,11 +491,7 @@ class TestReleasedRouterIpsMerge:
 
         track_router_ips(cfg, "proj-123", shared_ctx)
 
-        released_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_router_ips"]
-        ]
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
         assert len(released_call) == 1
         all_released = released_call[0][0][2]
         assert len(all_released) == 2
@@ -778,9 +752,7 @@ class TestGetRouterExternalIpMissingFields:
     def test_gateway_info_fixed_ip_no_ip_address_key(self) -> None:
         """When fixed_ip dict has no ip_address key, return None."""
         router = MagicMock()
-        router.external_gateway_info = {
-            "external_fixed_ips": [{"subnet_id": "subnet-123"}]
-        }
+        router.external_gateway_info = {"external_fixed_ips": [{"subnet_id": "subnet-123"}]}
         result = _get_router_external_ip(router)
         # dict.get() returns None for missing keys, not MagicMock
         assert result is None
@@ -820,11 +792,7 @@ class TestTrackRouterIpsMultipleChanges:
         assert any("10.0.0.1" in d and "10.0.0.99" in d for d in action_details)
 
         # Two IPs released: 10.0.0.2 (removed) and 10.0.0.1 (changed)
-        released_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_router_ips"]
-        ]
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
         assert len(released_call) == 1
         released_entries = released_call[0][0][2]
         assert len(released_entries) == 2
@@ -857,11 +825,7 @@ class TestRouterWithNoExternalGateway:
         assert "router-a" in actions[0].name
 
         # Only r1 persisted
-        router_ips_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["router_ips"]
-        ]
+        router_ips_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["router_ips"]]
         assert len(router_ips_call) == 1
         persisted_routers = router_ips_call[0][0][2]
         assert len(persisted_routers) == 1
@@ -884,9 +848,7 @@ class TestPerProjectExternalNetworkOverride:
         )
 
         # Populate the external_network_map with the per-project network
-        shared_ctx.external_network_map["project-specific-network"] = (
-            "specific-net-id-456"
-        )
+        shared_ctx.external_network_map["project-specific-network"] = "specific-net-id-456"
 
         shared_ctx.conn.network.find_network.return_value = None
         shared_ctx.conn.network.networks.return_value = []
@@ -918,13 +880,8 @@ class TestPerProjectExternalNetworkOverride:
         assert action.status == ActionStatus.CREATED
 
         router_kwargs = shared_ctx.conn.network.create_router.call_args[1]
-        assert (
-            router_kwargs["external_gateway_info"]["network_id"]
-            == "specific-net-id-456"
-        )
-        assert router_kwargs["external_gateway_info"]["external_fixed_ips"] == [
-            {"subnet_id": "specific-subnet-id-789"}
-        ]
+        assert router_kwargs["external_gateway_info"]["network_id"] == "specific-net-id-456"
+        assert router_kwargs["external_gateway_info"]["external_fixed_ips"] == [{"subnet_id": "specific-subnet-id-789"}]
 
     def test_per_project_fallback_to_global(
         self,
@@ -954,9 +911,7 @@ class TestPerProjectExternalNetworkOverride:
 
         router_kwargs = shared_ctx.conn.network.create_router.call_args[1]
         assert router_kwargs["external_gateway_info"]["network_id"] == "ext-net-id-123"
-        assert router_kwargs["external_gateway_info"]["external_fixed_ips"] == [
-            {"subnet_id": "ext-subnet-123"}
-        ]
+        assert router_kwargs["external_gateway_info"]["external_fixed_ips"] == [{"subnet_id": "ext-subnet-123"}]
 
 
 class TestRouterGatewayMismatch:
@@ -973,9 +928,7 @@ class TestRouterGatewayMismatch:
             config_path="/tmp/project.yaml",
             state_key="test_project",
         )
-        r1 = _make_router(
-            "r1", "router-a", "10.0.0.1", gateway_network_id="ext-net-id-123"
-        )
+        r1 = _make_router("r1", "router-a", "10.0.0.1", gateway_network_id="ext-net-id-123")
         shared_ctx.conn.network.routers.return_value = [r1]
 
         actions = track_router_ips(cfg, "proj-123", shared_ctx)
@@ -1036,9 +989,7 @@ class TestRouterGatewayMismatch:
             config_path="/tmp/project.yaml",
             state_key="test_project",
         )
-        r1 = _make_router(
-            "r1", "router-a", "10.0.0.1", gateway_network_id="ext-net-id-123"
-        )
+        r1 = _make_router("r1", "router-a", "10.0.0.1", gateway_network_id="ext-net-id-123")
         r2 = _make_router("r2", "router-b", "10.0.0.2", gateway_network_id="dmz-net-id")
         shared_ctx.conn.network.routers.return_value = [r1, r2]
 
@@ -1130,9 +1081,7 @@ class TestReclaimRouterIps:
             sample_project_cfg,
             reclaim_router_ips=True,
             router_ips=[
-                RouterIpEntry(
-                    id="old-rtr", name="testproject-router", external_ip="198.51.100.5"
-                ),
+                RouterIpEntry(id="old-rtr", name="testproject-router", external_ip="198.51.100.5"),
             ],
         )
         _setup_empty_project(shared_ctx)
@@ -1142,9 +1091,7 @@ class TestReclaimRouterIps:
         assert action.status == ActionStatus.CREATED
         router_kwargs = shared_ctx.conn.network.create_router.call_args[1]
         fixed_ips = router_kwargs["external_gateway_info"]["external_fixed_ips"]
-        assert fixed_ips == [
-            {"ip_address": "198.51.100.5", "subnet_id": "ext-subnet-123"}
-        ]
+        assert fixed_ips == [{"ip_address": "198.51.100.5", "subnet_id": "ext-subnet-123"}]
 
     def test_reclaim_conflict_falls_back(
         self,
@@ -1157,9 +1104,7 @@ class TestReclaimRouterIps:
             reclaim_router_ips=True,
             state_key="test_project",
             router_ips=[
-                RouterIpEntry(
-                    id="old-rtr", name="testproject-router", external_ip="198.51.100.5"
-                ),
+                RouterIpEntry(id="old-rtr", name="testproject-router", external_ip="198.51.100.5"),
             ],
         )
         _setup_empty_project(shared_ctx)
@@ -1185,11 +1130,7 @@ class TestReclaimRouterIps:
         assert fixed_ips == [{"subnet_id": "ext-subnet-123"}]
 
         # released_router_ips persisted with the lost IP.
-        released_call = [
-            c
-            for c in shared_ctx.state_store.save.call_args_list
-            if c[0][1] == ["released_router_ips"]
-        ]
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
         assert len(released_call) == 1
         released_entries = released_call[0][0][2]
         assert released_entries[-1]["address"] == "198.51.100.5"
@@ -1206,20 +1147,16 @@ class TestReclaimRouterIps:
             reclaim_router_ips=True,
             state_key="test_project",
             router_ips=[
-                RouterIpEntry(
-                    id="old-rtr", name="testproject-router", external_ip="198.51.100.5"
-                ),
+                RouterIpEntry(id="old-rtr", name="testproject-router", external_ip="198.51.100.5"),
             ],
         )
         _setup_empty_project(shared_ctx)
 
-        shared_ctx.conn.network.create_router.side_effect = (
-            openstack.exceptions.BadRequestException("invalid IP for subnet")
+        shared_ctx.conn.network.create_router.side_effect = openstack.exceptions.BadRequestException(
+            "invalid IP for subnet"
         )
 
-        with pytest.raises(
-            openstack.exceptions.BadRequestException, match="reclaim"
-        ) as exc_info:
+        with pytest.raises(openstack.exceptions.BadRequestException, match="reclaim") as exc_info:
             ensure_network_stack(cfg, "proj-123", shared_ctx)
 
         msg = str(exc_info.value)
@@ -1241,9 +1178,7 @@ class TestReclaimRouterIps:
             sample_project_cfg,
             reclaim_router_ips=False,
             router_ips=[
-                RouterIpEntry(
-                    id="old-rtr", name="testproject-router", external_ip="198.51.100.5"
-                ),
+                RouterIpEntry(id="old-rtr", name="testproject-router", external_ip="198.51.100.5"),
             ],
         )
         _setup_empty_project(shared_ctx)
@@ -1315,9 +1250,7 @@ class TestReclaimRouterIps:
             sample_project_cfg,
             reclaim_router_ips=True,
             router_ips=[
-                RouterIpEntry(
-                    id="old-rtr", name="testproject-router", external_ip="198.51.100.5"
-                ),
+                RouterIpEntry(id="old-rtr", name="testproject-router", external_ip="198.51.100.5"),
             ],
         )
         dry_run_ctx.conn.network.find_network.return_value = None
