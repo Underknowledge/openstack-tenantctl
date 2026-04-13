@@ -91,7 +91,7 @@ The core provisioning engine is tested against OpenStack deployments. The config
 | **Resilient** | Automatic retry with backoff; one project's failure doesn't block others |
 | **Safe** | Dry-run mode, fail-fast validation, quota safety nets, teardown guards |
 | Sanity-preserving | Your therapist doesn't understand OpenStack anyway |
-| Ethical | No animals or cloud admins were harmed in the making of this tool |
+| Ethical | No admins or clouds were harmed in the making of this tool |
 
 ---
 
@@ -111,12 +111,20 @@ The core provisioning engine is tested against OpenStack deployments. The config
 
 ---
 
+## Requirements
+
+- **Python** 3.11+ 
+  - **openstacksdk** 4.x, **pyyaml**, **deepmerge**, **tenacity**, **filelock**
+
+---
+
 ## Quick Start
 
 ```bash
 # Clone and install
-git clone https://github.com/Underknowlege/openstack-tenantctl.git
+git clone https://github.com/Underknowledge/openstack-tenantctl.git
 cd openstack-tenantctl
+# you need python >3.11 e.g. nix-shell -p python312 ; sudo dnf install python3.12 ; 
 make install
 
 # Set OpenStack credentials (option A: environment variables)
@@ -215,7 +223,7 @@ Everything not specified, DHCP, DNS defaults, base quotas, federation mapping, c
 
 ```bash
 make fmt          # Format code (ruff format + ruff check --fix)
-make lint         # Lint (ruff check + mypy --strict)
+make lint         # Lint (ruff check + mypy)
 make test         # Run tests (pytest)
 
 make version      # Show current version
@@ -226,12 +234,6 @@ make bump-major   # 0.2.8 → 1.0.0
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and guidelines.
 
----
-
-## Requirements
-
-- **Python** 3.11+ 
-- **openstacksdk** 4.x, **pyyaml**, **deepmerge**, **tenacity**
 
 ---
 
