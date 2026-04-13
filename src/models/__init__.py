@@ -8,6 +8,7 @@ mutation patterns (e.g. reconciler state transitions).
 """
 
 from src.models.access import GroupRoleAssignment
+from src.models.defaults import DefaultsConfig
 from src.models.federation import FederationConfig, FederationRoleAssignment
 from src.models.network import AllocationPool, NetworkConfig, SubnetConfig
 from src.models.project import ProjectConfig, ProjectState
@@ -22,6 +23,7 @@ from src.models.state import (
 
 __all__ = [
     "AllocationPool",
+    "DefaultsConfig",
     "FederationConfig",
     "FederationRoleAssignment",
     "FipEntry",
