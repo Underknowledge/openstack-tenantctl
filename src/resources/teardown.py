@@ -368,8 +368,6 @@ def teardown_project(
     )
 
     if failures:
-        raise TeardownError(
-            f"Teardown of {project_name!r} had {len(failures)} failure(s): " + ", ".join(failures)
-        )
+        raise TeardownError(f"Teardown of {project_name!r} had {len(failures)} failure(s): " + ", ".join(failures))
 
     return actions

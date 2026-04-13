@@ -52,9 +52,7 @@ def _ensure_compute_quotas(
 
     if any(desired[k] != current[k] for k in desired):
         # Check if any key is being lowered — may need usage check.
-        lowered_keys = [
-            k for k in desired if isinstance(current[k], int) and desired[k] < current[k]
-        ]
+        lowered_keys = [k for k in desired if isinstance(current[k], int) and desired[k] < current[k]]
         if lowered_keys and not ctx.dry_run:
             usage_quota = ctx.conn.compute.get_quota_set(project_id, usage=True)
             usage_dict = usage_quota.usage if isinstance(usage_quota.usage, dict) else {}
@@ -71,9 +69,7 @@ def _ensure_compute_quotas(
                     )
                     desired[k] = used
 
-        diff = ", ".join(
-            f"{k}: {current[k]} → {desired[k]}" for k in sorted(desired) if desired[k] != current[k]
-        )
+        diff = ", ".join(f"{k}: {current[k]} → {desired[k]}" for k in sorted(desired) if desired[k] != current[k])
         if ctx.dry_run:
             return [ctx.record(ActionStatus.UPDATED, "compute_quota", "", f"would update ({diff})")]
         if diff:
@@ -162,17 +158,14 @@ def _ensure_network_quotas(
     if neutron_quotas:
         current = ctx.conn.network.get_quota(project_id)
         current_dict = {k: getattr(current, k, None) for k in neutron_quotas}
-        neutron_needs_update = any(
-            neutron_quotas.get(k) != current_dict.get(k) for k in neutron_quotas
-        )
+        neutron_needs_update = any(neutron_quotas.get(k) != current_dict.get(k) for k in neutron_quotas)
 
         if neutron_needs_update:
             # Check if any Neutron key is being lowered below usage.
             lowered_keys = [
                 k
                 for k in neutron_quotas
-                if isinstance(current_dict.get(k), int)
-                and neutron_quotas[k] < (current_dict[k] or 0)
+                if isinstance(current_dict.get(k), int) and neutron_quotas[k] < (current_dict[k] or 0)
             ]
             if lowered_keys and not ctx.dry_run:
                 usage = ctx.conn.network.get_quota(project_id, details=True)
@@ -312,9 +305,7 @@ def _ensure_block_storage_quotas(
 
     if needs_update:
         # Check if any key is being lowered below usage.
-        lowered_keys = [
-            k for k in desired if isinstance(current[k], int) and desired[k] < current[k]
-        ]
+        lowered_keys = [k for k in desired if isinstance(current[k], int) and desired[k] < current[k]]
         if lowered_keys and not ctx.dry_run:
             usage_quota = ctx.conn.block_storage.get_quota_set(project_id, usage=True)
             usage_dict = usage_quota.usage if isinstance(usage_quota.usage, dict) else {}
@@ -331,9 +322,7 @@ def _ensure_block_storage_quotas(
                     )
                     desired[k] = used
 
-        diff = ", ".join(
-            f"{k}: {current[k]} → {desired[k]}" for k in sorted(desired) if desired[k] != current[k]
-        )
+        diff = ", ".join(f"{k}: {current[k]} → {desired[k]}" for k in sorted(desired) if desired[k] != current[k])
         if ctx.dry_run:
             return [
                 ctx.record(

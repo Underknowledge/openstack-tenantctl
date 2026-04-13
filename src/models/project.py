@@ -99,31 +99,19 @@ class ProjectConfig:
             track_fip_changes=data.get("track_fip_changes", False),
             external_network_name=data.get("external_network_name", ""),
             external_network_subnet=data.get("external_network_subnet", ""),
-            network=(
-                NetworkConfig.from_dict(network_data) if isinstance(network_data, dict) else None
-            ),
+            network=(NetworkConfig.from_dict(network_data) if isinstance(network_data, dict) else None),
             quotas=(QuotaConfig.from_dict(quotas_data) if isinstance(quotas_data, dict) else None),
-            security_group=(
-                SecurityGroupConfig.from_dict(sg_data) if isinstance(sg_data, dict) else None
-            ),
-            federation=(
-                FederationConfig.from_dict(federation_data)
-                if isinstance(federation_data, dict)
-                else None
-            ),
+            security_group=(SecurityGroupConfig.from_dict(sg_data) if isinstance(sg_data, dict) else None),
+            federation=(FederationConfig.from_dict(federation_data) if isinstance(federation_data, dict) else None),
             group_role_assignments=(
-                [GroupRoleAssignment.from_dict(e) for e in gra_data]
-                if isinstance(gra_data, list)
-                else []
+                [GroupRoleAssignment.from_dict(e) for e in gra_data] if isinstance(gra_data, list) else []
             ),
             config_path=data.get("_config_path", data.get("config_path", "")),
             state_key=data.get("_state_key", data.get("state_key", "")),
             preallocated_fips=[FipEntry.from_dict(f) for f in data.get("preallocated_fips", [])],
             released_fips=[ReleasedFipEntry.from_dict(f) for f in data.get("released_fips", [])],
             router_ips=[RouterIpEntry.from_dict(r) for r in data.get("router_ips", [])],
-            released_router_ips=[
-                ReleasedRouterIpEntry.from_dict(r) for r in data.get("released_router_ips", [])
-            ],
+            released_router_ips=[ReleasedRouterIpEntry.from_dict(r) for r in data.get("released_router_ips", [])],
         )
 
     @classmethod
@@ -155,15 +143,13 @@ class ProjectConfig:
         # --- Name format ---
         if isinstance(name, str) and not _NAME_RE.match(name):
             errors.append(
-                f"{label}: name '{name}' is not a valid OpenStack identifier "
-                f"(must match {_NAME_RE.pattern})"
+                f"{label}: name '{name}' is not a valid OpenStack identifier " f"(must match {_NAME_RE.pattern})"
             )
 
         # --- Resource prefix format ---
         if isinstance(prefix, str) and not _RESOURCE_PREFIX_RE.match(prefix):
             errors.append(
-                f"{label}: resource_prefix '{prefix}' is invalid "
-                f"(must match {_RESOURCE_PREFIX_RE.pattern})"
+                f"{label}: resource_prefix '{prefix}' is invalid " f"(must match {_RESOURCE_PREFIX_RE.pattern})"
             )
 
         # --- Domain format ---
@@ -172,9 +158,7 @@ class ProjectConfig:
 
         if domain_id is not None:
             if not isinstance(domain_id, str):
-                errors.append(
-                    f"{label}: domain_id must be a string, got {type(domain_id).__name__}"
-                )
+                errors.append(f"{label}: domain_id must be a string, got {type(domain_id).__name__}")
             elif len(domain_id) == 0:
                 errors.append(f"{label}: domain_id cannot be an empty string")
 
@@ -189,16 +173,12 @@ class ProjectConfig:
         validated_gras: list[GroupRoleAssignment] = []
         if gra_data is not None:
             if not isinstance(gra_data, list):
-                errors.append(
-                    f"{label}: group_role_assignments must be a list, got {type(gra_data).__name__}"
-                )
+                errors.append(f"{label}: group_role_assignments must be a list, got {type(gra_data).__name__}")
             else:
                 for idx, entry in enumerate(gra_data):
                     entry_label = f"{label}: group_role_assignments[{idx}]"
                     if not isinstance(entry, dict):
-                        errors.append(
-                            f"{entry_label} must be a mapping, got {type(entry).__name__}"
-                        )
+                        errors.append(f"{entry_label} must be a mapping, got {type(entry).__name__}")
                         continue
                     gra = GroupRoleAssignment.validate(entry, errors, entry_label)
                     if gra is not None:
@@ -292,7 +272,5 @@ class ProjectConfig:
             preallocated_fips=[FipEntry.from_dict(f) for f in data.get("preallocated_fips", [])],
             released_fips=[ReleasedFipEntry.from_dict(f) for f in data.get("released_fips", [])],
             router_ips=[RouterIpEntry.from_dict(r) for r in data.get("router_ips", [])],
-            released_router_ips=[
-                ReleasedRouterIpEntry.from_dict(r) for r in data.get("released_router_ips", [])
-            ],
+            released_router_ips=[ReleasedRouterIpEntry.from_dict(r) for r in data.get("released_router_ips", [])],
         )

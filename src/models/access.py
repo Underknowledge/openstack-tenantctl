@@ -24,9 +24,7 @@ class GroupRoleAssignment:
         )
 
     @classmethod
-    def validate(
-        cls, data: dict[str, Any], errors: list[str], label: str
-    ) -> GroupRoleAssignment | None:
+    def validate(cls, data: dict[str, Any], errors: list[str], label: str) -> GroupRoleAssignment | None:
         """Validate a single group role assignment entry."""
         group = data.get("group")
         if not isinstance(group, str) or len(group) == 0:

@@ -87,9 +87,7 @@ def test_skips_when_config_section_absent(
         "network": None,
         "quotas": None,
     }
-    cfg = dataclasses.replace(
-        sample_project_cfg, **{key_to_delete: replacement_values[key_to_delete]}
-    )
+    cfg = dataclasses.replace(sample_project_cfg, **{key_to_delete: replacement_values[key_to_delete]})
 
     result = func(cfg, "fake-project-id", shared_ctx)
 

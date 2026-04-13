@@ -48,9 +48,7 @@ def config_with_minimal_subnet(tmp_path: Path) -> Path:
 class TestAutoCalculateGatewayIP:
     """Tests for auto-calculating gateway_ip from CIDR."""
 
-    def test_auto_calculates_gateway_from_cidr(
-        self, config_with_minimal_subnet: Path
-    ) -> None:
+    def test_auto_calculates_gateway_from_cidr(self, config_with_minimal_subnet: Path) -> None:
         """Should auto-calculate gateway_ip as first usable IP in subnet."""
         projects, _ = load_all_projects(str(config_with_minimal_subnet))
 
@@ -93,9 +91,7 @@ class TestAutoCalculateGatewayIP:
 class TestAutoCalculateAllocationPools:
     """Tests for auto-calculating allocation_pools from CIDR."""
 
-    def test_auto_calculates_allocation_pools_from_cidr(
-        self, config_with_minimal_subnet: Path
-    ) -> None:
+    def test_auto_calculates_allocation_pools_from_cidr(self, config_with_minimal_subnet: Path) -> None:
         """Should auto-calculate allocation_pools as all IPs except gateway."""
         projects, _ = load_all_projects(str(config_with_minimal_subnet))
 

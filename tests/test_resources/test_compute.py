@@ -26,9 +26,7 @@ def _make_server(name: str, status: str) -> MagicMock:
 class TestShelveAllServers:
     """Tests for shelve_all_servers function."""
 
-    def test_shelves_active_skips_others(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_shelves_active_skips_others(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Only ACTIVE servers should be shelved."""
         servers = [
             _make_server("active1", "ACTIVE"),
@@ -52,9 +50,7 @@ class TestShelveAllServers:
         shared_ctx.conn.compute.shelve_server.assert_any_call("active1-id")
         shared_ctx.conn.compute.shelve_server.assert_any_call("active2-id")
 
-    def test_no_servers_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_no_servers_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """No servers in project returns SKIPPED with specific message."""
         shared_ctx.conn.compute.servers.return_value = []
 
@@ -66,9 +62,7 @@ class TestShelveAllServers:
         assert actions[0].name == "all"
         assert actions[0].details == "no servers in project"
 
-    def test_no_active_servers_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_no_active_servers_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """All servers already shelved/off returns SKIPPED with specific message."""
         servers = [
             _make_server("shelved1", "SHELVED"),
@@ -85,9 +79,7 @@ class TestShelveAllServers:
         assert actions[0].details == "no active servers to shelve"
         shared_ctx.conn.compute.shelve_server.assert_not_called()
 
-    def test_dry_run_no_servers(
-        self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_dry_run_no_servers(self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Online dry-run with no servers → SKIPPED."""
         dry_run_ctx.conn.compute.servers.return_value = []
 
@@ -103,9 +95,7 @@ class TestShelveAllServers:
         # No writes
         dry_run_ctx.conn.compute.shelve_server.assert_not_called()
 
-    def test_dry_run_with_active_servers(
-        self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_dry_run_with_active_servers(self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Online dry-run with active servers → UPDATED with server names."""
         servers = [
             _make_server("web1", "ACTIVE"),
@@ -123,9 +113,7 @@ class TestShelveAllServers:
         assert "web2" in actions[0].details
         dry_run_ctx.conn.compute.shelve_server.assert_not_called()
 
-    def test_offline_dry_run_skips(
-        self, offline_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_offline_dry_run_skips(self, offline_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Offline dry-run → SKIPPED with no API calls."""
         actions = shelve_all_servers(sample_project_cfg, "proj-123", offline_ctx)
 
@@ -133,9 +121,7 @@ class TestShelveAllServers:
         assert actions[0].status == ActionStatus.SKIPPED
         assert "offline" in actions[0].details
 
-    def test_shelve_failure_continues(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_shelve_failure_continues(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """A single shelve failure must not prevent remaining servers from being shelved."""
         servers = [
             _make_server("fail_server", "ACTIVE"),
@@ -162,9 +148,7 @@ class TestShelveAllServers:
         shared_ctx.conn.compute.shelve_server.assert_any_call("fail_server-id")
         shared_ctx.conn.compute.shelve_server.assert_any_call("ok_server-id")
 
-    def test_transient_states_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_transient_states_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Servers in transient states should be skipped (not ACTIVE)."""
         servers = [
             _make_server("building", "BUILDING"),
@@ -183,9 +167,7 @@ class TestShelveAllServers:
         assert actions[0].name == "active"
         shared_ctx.conn.compute.shelve_server.assert_called_once_with("active-id")
 
-    def test_shutoff_server_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_shutoff_server_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """SHUTOFF servers should be skipped during shelve (not ACTIVE)."""
         servers = [
             _make_server("shutoff1", "SHUTOFF"),
@@ -200,9 +182,7 @@ class TestShelveAllServers:
         assert actions[0].details == "no active servers to shelve"
         shared_ctx.conn.compute.shelve_server.assert_not_called()
 
-    def test_server_with_none_or_empty_name(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_server_with_none_or_empty_name(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Servers with missing or empty names should be handled gracefully."""
         server_no_name = MagicMock()
         server_no_name.name = None
@@ -228,15 +208,11 @@ class TestShelveAllServers:
         shared_ctx.conn.compute.shelve_server.assert_any_call("no-name-id")
         shared_ctx.conn.compute.shelve_server.assert_any_call("empty-name-id")
 
-    def test_endpoint_not_found_raises(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_endpoint_not_found_raises(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """EndpointNotFound during server list should propagate (no graceful handling)."""
         from openstack.exceptions import EndpointNotFound
 
-        shared_ctx.conn.compute.servers.side_effect = EndpointNotFound(
-            message="Compute service not available"
-        )
+        shared_ctx.conn.compute.servers.side_effect = EndpointNotFound(message="Compute service not available")
 
         with pytest.raises(EndpointNotFound, match="Compute service not available"):
             shelve_all_servers(sample_project_cfg, "proj-123", shared_ctx)
@@ -245,9 +221,7 @@ class TestShelveAllServers:
 class TestUnshelveAllServers:
     """Tests for unshelve_all_servers function."""
 
-    def test_unshelves_shelved_skips_others(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_unshelves_shelved_skips_others(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Only SHELVED/SHELVED_OFFLOADED servers should be unshelved."""
         servers = [
             _make_server("shelved1", "SHELVED"),
@@ -270,9 +244,7 @@ class TestUnshelveAllServers:
         shared_ctx.conn.compute.unshelve_server.assert_any_call("shelved1-id")
         shared_ctx.conn.compute.unshelve_server.assert_any_call("offloaded1-id")
 
-    def test_no_servers_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_no_servers_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """No servers in project returns SKIPPED with specific message."""
         shared_ctx.conn.compute.servers.return_value = []
 
@@ -284,9 +256,7 @@ class TestUnshelveAllServers:
         assert actions[0].name == "all"
         assert actions[0].details == "no servers in project"
 
-    def test_no_shelved_servers_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_no_shelved_servers_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """All servers active/off returns SKIPPED with specific message."""
         servers = [
             _make_server("active1", "ACTIVE"),
@@ -303,9 +273,7 @@ class TestUnshelveAllServers:
         assert actions[0].details == "no shelved servers to unshelve"
         shared_ctx.conn.compute.unshelve_server.assert_not_called()
 
-    def test_dry_run_no_servers(
-        self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_dry_run_no_servers(self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Online dry-run with no servers → SKIPPED."""
         dry_run_ctx.conn.compute.servers.return_value = []
 
@@ -319,9 +287,7 @@ class TestUnshelveAllServers:
         dry_run_ctx.conn.compute.servers.assert_called_once()
         dry_run_ctx.conn.compute.unshelve_server.assert_not_called()
 
-    def test_dry_run_with_shelved_servers(
-        self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_dry_run_with_shelved_servers(self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Online dry-run with shelved servers → UPDATED with server names."""
         servers = [
             _make_server("web1", "SHELVED"),
@@ -339,9 +305,7 @@ class TestUnshelveAllServers:
         assert "web2" in actions[0].details
         dry_run_ctx.conn.compute.unshelve_server.assert_not_called()
 
-    def test_offline_dry_run_skips(
-        self, offline_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_offline_dry_run_skips(self, offline_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Offline dry-run → SKIPPED with no API calls."""
         actions = unshelve_all_servers(sample_project_cfg, "proj-123", offline_ctx)
 
@@ -349,9 +313,7 @@ class TestUnshelveAllServers:
         assert actions[0].status == ActionStatus.SKIPPED
         assert "offline" in actions[0].details
 
-    def test_unshelve_failure_continues(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_unshelve_failure_continues(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """A single unshelve failure must not prevent remaining servers from being unshelved."""
         servers = [
             _make_server("fail_server", "SHELVED"),
@@ -378,9 +340,7 @@ class TestUnshelveAllServers:
         shared_ctx.conn.compute.unshelve_server.assert_any_call("fail_server-id")
         shared_ctx.conn.compute.unshelve_server.assert_any_call("ok_server-id")
 
-    def test_transient_states_skipped(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_transient_states_skipped(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Servers in transient states should be skipped (not SHELVED/SHELVED_OFFLOADED)."""
         servers = [
             _make_server("building", "BUILDING"),
@@ -396,9 +356,7 @@ class TestUnshelveAllServers:
         assert actions[0].name == "shelved"
         shared_ctx.conn.compute.unshelve_server.assert_called_once_with("shelved-id")
 
-    def test_mixed_shelved_states_unshelved(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_mixed_shelved_states_unshelved(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Unshelve should handle mixed SHELVED, SHELVED_OFFLOADED, and ACTIVE states."""
         servers = [
             _make_server("shelved1", "SHELVED"),
@@ -422,9 +380,7 @@ class TestUnshelveAllServers:
         shared_ctx.conn.compute.unshelve_server.assert_any_call("offloaded1-id")
         shared_ctx.conn.compute.unshelve_server.assert_any_call("offloaded2-id")
 
-    def test_unshelve_server_with_none_name(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_unshelve_server_with_none_name(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Servers with missing name should be handled gracefully."""
         server_no_name = MagicMock()
         server_no_name.name = None
@@ -441,15 +397,11 @@ class TestUnshelveAllServers:
         assert actions[0].name is None
         shared_ctx.conn.compute.unshelve_server.assert_called_once_with("no-name-id")
 
-    def test_endpoint_not_found_raises(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_endpoint_not_found_raises(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """EndpointNotFound during server list should propagate (no graceful handling)."""
         from openstack.exceptions import EndpointNotFound
 
-        shared_ctx.conn.compute.servers.side_effect = EndpointNotFound(
-            message="Compute service not available"
-        )
+        shared_ctx.conn.compute.servers.side_effect = EndpointNotFound(message="Compute service not available")
 
         with pytest.raises(EndpointNotFound, match="Compute service not available"):
             unshelve_all_servers(sample_project_cfg, "proj-123", shared_ctx)

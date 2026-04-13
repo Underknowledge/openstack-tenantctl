@@ -257,8 +257,7 @@ def ensure_network_stack(
             )
         except openstack.exceptions.ConflictException:
             logger.warning(
-                "Could not reclaim IP %s for router %s — address taken, "
-                "falling back to normal allocation",
+                "Could not reclaim IP %s for router %s — address taken, " "falling back to normal allocation",
                 previous_ip,
                 router_name,
             )
@@ -404,8 +403,7 @@ def track_router_ips(
             gw_net_id = gw_info.get("network_id")
             if gw_net_id and gw_net_id != configured_ext_net_id:
                 logger.warning(
-                    "Router %s (%s) gateways through network %s, "
-                    "but configured external network is %s",
+                    "Router %s (%s) gateways through network %s, " "but configured external network is %s",
                     r.name,
                     r.id,
                     gw_net_id,

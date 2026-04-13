@@ -15,20 +15,28 @@ def _make_project_cfg(
     issuer: str = "https://myidp.corp/realms/myrealm",
     mapping_id: str = "my-mapping",
     group_prefix: str = "/services/openstack/",
+    domain: str | None = None,
+    domain_id: str = "default",
+    user_type: str = "",
 ) -> ProjectConfig:
     """Build a minimal project config with federation settings."""
-    return ProjectConfig.from_dict(
-        {
-            "name": name,
-            "resource_prefix": name,
-            "federation": {
-                "issuer": issuer,
-                "mapping_id": mapping_id,
-                "group_prefix": group_prefix,
-                "role_assignments": role_assignments,
-            },
-        }
-    )
+    fed_dict: dict = {
+        "issuer": issuer,
+        "mapping_id": mapping_id,
+        "group_prefix": group_prefix,
+        "role_assignments": role_assignments,
+    }
+    if user_type:
+        fed_dict["user_type"] = user_type
+    project_dict: dict = {
+        "name": name,
+        "resource_prefix": name,
+        "domain_id": domain_id,
+        "federation": fed_dict,
+    }
+    if domain is not None:
+        project_dict["domain"] = domain
+    return ProjectConfig.from_dict(project_dict)
 
 
 class TestEnsureFederationMapping:
@@ -74,17 +82,13 @@ class TestEnsureFederationMapping:
         member_roles = member_rule["local"][1]["projects"][0]["roles"]
         assert member_roles == [{"name": "member"}, {"name": "load-balancer_member"}]
         assert member_rule["local"][1]["projects"][0]["name"] == "test_project"
-        assert member_rule["remote"][3]["any_one_of"] == [
-            "/services/openstack/test_project/member"
-        ]
+        assert member_rule["remote"][3]["any_one_of"] == ["/services/openstack/test_project/member"]
 
         # Second rule: reader group grants reader
         reader_rule = rules[1]
         reader_roles = reader_rule["local"][1]["projects"][0]["roles"]
         assert reader_roles == [{"name": "reader"}]
-        assert reader_rule["remote"][3]["any_one_of"] == [
-            "/services/openstack/test_project/reader"
-        ]
+        assert reader_rule["remote"][3]["any_one_of"] == ["/services/openstack/test_project/reader"]
 
     def test_skip_when_rules_match(
         self,
@@ -222,21 +226,13 @@ class TestRuleSorting:
         # Verify sorting: alpha_project comes before zulu_project
         assert len(rules) == 4
         assert rules[0]["local"][1]["projects"][0]["name"] == "alpha_project"
-        assert rules[0]["remote"][3]["any_one_of"] == [
-            "/services/openstack/alpha_project/admin"
-        ]
+        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/alpha_project/admin"]
         assert rules[1]["local"][1]["projects"][0]["name"] == "alpha_project"
-        assert rules[1]["remote"][3]["any_one_of"] == [
-            "/services/openstack/alpha_project/member"
-        ]
+        assert rules[1]["remote"][3]["any_one_of"] == ["/services/openstack/alpha_project/member"]
         assert rules[2]["local"][1]["projects"][0]["name"] == "zulu_project"
-        assert rules[2]["remote"][3]["any_one_of"] == [
-            "/services/openstack/zulu_project/member"
-        ]
+        assert rules[2]["remote"][3]["any_one_of"] == ["/services/openstack/zulu_project/member"]
         assert rules[3]["local"][1]["projects"][0]["name"] == "zulu_project"
-        assert rules[3]["remote"][3]["any_one_of"] == [
-            "/services/openstack/zulu_project/reader"
-        ]
+        assert rules[3]["remote"][3]["any_one_of"] == ["/services/openstack/zulu_project/reader"]
 
     def test_static_rules_placed_first(
         self,
@@ -302,9 +298,7 @@ class TestGroupPathResolution:
         assert len(rules) == 1
         assert rules[0]["remote"][3]["any_one_of"] == ["/custom/path/heat"]
         assert rules[0]["local"][1]["projects"][0]["name"] == "test_project"
-        assert rules[0]["local"][1]["projects"][0]["roles"] == [
-            {"name": "heat_stack_user"}
-        ]
+        assert rules[0]["local"][1]["projects"][0]["roles"] == [{"name": "heat_stack_user"}]
 
     def test_multiple_roles_per_group(
         self,
@@ -339,9 +333,7 @@ class TestGroupPathResolution:
             {"name": "load-balancer_member"},
             {"name": "heat_stack_user"},
         ]
-        assert rules[0]["remote"][3]["any_one_of"] == [
-            "/services/openstack/test_project/member"
-        ]
+        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/test_project/member"]
 
     def test_multiple_groups_per_assignment(
         self,
@@ -437,9 +429,7 @@ class TestGroupPathResolution:
 
         # Verify single-item list resolves correctly (same as string)
         assert len(rules) == 1
-        assert rules[0]["remote"][3]["any_one_of"] == [
-            "/services/openstack/test_project/member"
-        ]
+        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/test_project/member"]
 
     def test_group_prefix_without_trailing_slash(
         self,
@@ -463,9 +453,7 @@ class TestGroupPathResolution:
         rules = call_kwargs["rules"]
 
         # Verify concatenation without trailing slash (no double slash)
-        assert rules[0]["remote"][3]["any_one_of"] == [
-            "/services/openstacktest_project/member"
-        ]
+        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstacktest_project/member"]
 
 
 class TestProjectStateFiltering:
@@ -519,9 +507,7 @@ class TestProjectStateFiltering:
         # Verify ONLY the present project generated a rule
         assert len(rules) == 1
         assert rules[0]["local"][1]["projects"][0]["name"] == "active_proj"
-        assert rules[0]["remote"][3]["any_one_of"] == [
-            "/services/openstack/active_proj/member"
-        ]
+        assert rules[0]["remote"][3]["any_one_of"] == ["/services/openstack/active_proj/member"]
         # Verify locked and absent projects did NOT generate rules
         project_names = [r["local"][1]["projects"][0]["name"] for r in rules]
         assert "locked_proj" not in project_names
@@ -612,3 +598,159 @@ class TestEdgeCases:
 
         # Verify empty mapping is pushed (clearing old rules)
         assert rules == []
+
+
+class TestDomainAwareFederationRules:
+    """Domain and user_type inclusion in generated federation mapping rules."""
+
+    def test_domain_adds_domain_element(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="MyDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        projects_element = rules[0]["local"][1]
+        assert projects_element["domain"] == {"name": "MyDomain"}
+        assert projects_element["projects"][0]["name"] == "proj"
+
+    def test_user_type_adds_type_to_user(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                user_type="ephemeral",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        user_element = rules[0]["local"][0]["user"]
+        assert user_element["type"] == "ephemeral"
+        assert user_element["name"] == "{0}"
+        assert user_element["email"] == "{1}"
+
+    def test_domain_and_user_type_together(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="MyDomain",
+                user_type="ephemeral",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][0]["user"]["type"] == "ephemeral"
+        assert rules[0]["local"][1]["domain"] == {"name": "MyDomain"}
+
+    def test_no_domain_no_user_type(self) -> None:
+        """Backward compatibility: neither set → rule unchanged."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        # No "type" key on user element
+        assert "type" not in rules[0]["local"][0]["user"]
+        # No "domain" key on projects element
+        assert "domain" not in rules[0]["local"][1]
+
+    def test_domain_without_user_type(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="X",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][1]["domain"] == {"name": "X"}
+        assert "type" not in rules[0]["local"][0]["user"]
+
+    def test_user_type_without_domain(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                user_type="ephemeral",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][0]["user"]["type"] == "ephemeral"
+        assert "domain" not in rules[0]["local"][1]
+
+    def test_custom_user_type_value(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                user_type="local",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][0]["user"]["type"] == "local"
+
+    def test_domain_with_multiple_assignments(self) -> None:
+        """All rules for a domain project include the domain element."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [
+                    {"idp_group": "member", "roles": ["member"]},
+                    {"idp_group": "reader", "roles": ["reader"]},
+                ],
+                domain="MyDomain",
+                user_type="ephemeral",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 2
+        for rule in rules:
+            assert rule["local"][1]["domain"] == {"name": "MyDomain"}
+            assert rule["local"][0]["user"]["type"] == "ephemeral"
+
+    def test_mixed_projects(self) -> None:
+        """One project with domain+user_type, one without → only configured project gets elements."""
+        projects = [
+            _make_project_cfg(
+                "domain_proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="MyDomain",
+                user_type="ephemeral",
+            ),
+            _make_project_cfg(
+                "plain_proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 2
+        # Rules are sorted by project name: domain_proj first, plain_proj second
+        domain_rule = rules[0]
+        plain_rule = rules[1]
+
+        assert domain_rule["local"][1]["projects"][0]["name"] == "domain_proj"
+        assert domain_rule["local"][1]["domain"] == {"name": "MyDomain"}
+        assert domain_rule["local"][0]["user"]["type"] == "ephemeral"
+
+        assert plain_rule["local"][1]["projects"][0]["name"] == "plain_proj"
+        assert "domain" not in plain_rule["local"][1]
+        assert "type" not in plain_rule["local"][0]["user"]

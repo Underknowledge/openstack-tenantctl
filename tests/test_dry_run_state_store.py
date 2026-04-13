@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.main import _setup_context
+from src.models.defaults import DefaultsConfig
 from src.state_store import YamlFileStateStore
 
 
@@ -17,9 +18,9 @@ def mock_state_store() -> YamlFileStateStore:
 
 
 @pytest.fixture
-def mock_defaults() -> dict:
+def mock_defaults() -> DefaultsConfig:
     """Return mock defaults configuration."""
-    return {"external_network": "public"}
+    return DefaultsConfig()
 
 
 @patch("src.main._connect")
@@ -28,7 +29,7 @@ def test_dry_run_offline_state_store_is_none(
     mock_build_map: MagicMock,
     mock_connect: MagicMock,
     mock_state_store: YamlFileStateStore,
-    mock_defaults: dict,
+    mock_defaults: DefaultsConfig,
 ) -> None:
     """Offline dry-run mode should set state_store to None for safety."""
     ctx = _setup_context(
@@ -61,7 +62,7 @@ def test_dry_run_online_state_store_is_none(
     mock_build_map: MagicMock,
     mock_connect: MagicMock,
     mock_state_store: YamlFileStateStore,
-    mock_defaults: dict,
+    mock_defaults: DefaultsConfig,
 ) -> None:
     """Online dry-run mode should set state_store to None for safety."""
     mock_conn = MagicMock()
@@ -102,7 +103,7 @@ def test_normal_mode_state_store_is_provided(
     mock_build_map: MagicMock,
     mock_connect: MagicMock,
     mock_state_store: YamlFileStateStore,
-    mock_defaults: dict,
+    mock_defaults: DefaultsConfig,
 ) -> None:
     """Normal (non-dry-run) mode should preserve state_store."""
     mock_conn = MagicMock()

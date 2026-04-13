@@ -98,8 +98,7 @@ def parse_quota_value(
         # Negative values (except -1) are invalid
         if value < 0:
             errors.append(
-                f"{label}: quota '{field_name}' must be -1 (unlimited) "
-                f"or a non-negative integer, got {value}"
+                f"{label}: quota '{field_name}' must be -1 (unlimited) " f"or a non-negative integer, got {value}"
             )
             return 0
         # Non-negative integers pass through unchanged
@@ -108,8 +107,7 @@ def parse_quota_value(
     # Handle string units
     if not isinstance(value, str):
         errors.append(
-            f"{label}: quota '{field_name}' must be an integer or unit string, "
-            f"got {type(value).__name__}"
+            f"{label}: quota '{field_name}' must be an integer or unit string, " f"got {type(value).__name__}"
         )
         return 0
 
@@ -137,13 +135,8 @@ def parse_quota_value(
 
     # Check if unit is valid
     if resolved_unit not in ALL_UNITS:
-        valid_units = ", ".join(
-            sorted([*DECIMAL_UNITS.keys(), *BINARY_UNITS.keys(), *UNIT_ALIASES.keys()])
-        )
-        errors.append(
-            f"{label}: quota '{field_name}' has unknown unit {unit_part!r}. "
-            f"Valid units: {valid_units}"
-        )
+        valid_units = ", ".join(sorted([*DECIMAL_UNITS.keys(), *BINARY_UNITS.keys(), *UNIT_ALIASES.keys()]))
+        errors.append(f"{label}: quota '{field_name}' has unknown unit {unit_part!r}. " f"Valid units: {valid_units}")
         return 0
 
     # Convert to bytes (intermediate representation)
@@ -165,8 +158,7 @@ def parse_quota_value(
     # Validate against maximum quota value
     if result_int > MAX_QUOTA_VALUE:
         errors.append(
-            f"{label}: quota '{field_name}' value {value!r} is too large "
-            f"(max {MAX_QUOTA_VALUE} {target_unit})"
+            f"{label}: quota '{field_name}' value {value!r} is too large " f"(max {MAX_QUOTA_VALUE} {target_unit})"
         )
         return 0
 

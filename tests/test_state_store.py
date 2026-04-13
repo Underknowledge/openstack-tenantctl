@@ -178,9 +178,7 @@ class TestLoadCorruptedPythonTags:
         store = YamlFileStateStore(state_dir)
         assert store.load("proj") == {}
 
-    def test_logs_warning(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_logs_warning(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         state_dir = tmp_path / "state"
         state_dir.mkdir()
         (state_dir / "proj.state.yaml").write_text(_CORRUPTED_YAML, encoding="utf-8")

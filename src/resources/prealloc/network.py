@@ -32,9 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 @retry()
-def _set_network_quotas(
-    conn: Connection, project_id: str, networks: int, subnets: int, routers: int
-) -> None:
+def _set_network_quotas(conn: Connection, project_id: str, networks: int, subnets: int, routers: int) -> None:
     """Set network, subnet, and router quotas to the specified values."""
     conn.network.update_quota(project_id, networks=networks, subnets=subnets, routers=routers)
     logger.info(

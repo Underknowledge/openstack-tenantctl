@@ -96,9 +96,7 @@ def _stub_empty_lists(mock_conn: MagicMock) -> None:
 class TestSafetyCheck:
     """Safety checks block teardown when servers/volumes exist."""
 
-    def test_servers_present_returns_error_with_details(
-        self, mock_conn: MagicMock
-    ) -> None:
+    def test_servers_present_returns_error_with_details(self, mock_conn: MagicMock) -> None:
         mock_conn.compute.servers.return_value = [
             _make_server("web1"),
             _make_server("web2"),
@@ -113,9 +111,7 @@ class TestSafetyCheck:
         assert "web2" in errors[0]
         assert "test_project" in errors[0]
 
-    def test_volumes_present_returns_error_with_details(
-        self, mock_conn: MagicMock
-    ) -> None:
+    def test_volumes_present_returns_error_with_details(self, mock_conn: MagicMock) -> None:
         mock_conn.compute.servers.return_value = []
         mock_conn.block_storage.volumes.return_value = [
             _make_volume("data-vol"),
@@ -184,9 +180,7 @@ class TestTeardownHappyPath:
 
         conn.network.delete_ip.side_effect = track("delete_ip")
         conn.block_storage.delete_snapshot.side_effect = track("delete_snapshot")
-        conn.network.remove_interface_from_router.side_effect = track(
-            "remove_interface"
-        )
+        conn.network.remove_interface_from_router.side_effect = track("remove_interface")
         conn.network.update_router.side_effect = track("clear_gateway")
         conn.network.delete_router.side_effect = track("delete_router")
         conn.network.delete_subnet.side_effect = track("delete_subnet")
@@ -215,13 +209,9 @@ class TestTeardownHappyPath:
 
         # All actions should be DELETED
         assert all(a.status == ActionStatus.DELETED for a in actions)
-        assert (
-            len(actions) == 7
-        )  # fip, snap, router, subnet, net, sg(custom), project (default sg skipped)
+        assert len(actions) == 7  # fip, snap, router, subnet, net, sg(custom), project (default sg skipped)
 
-    def test_skips_default_security_group(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_skips_default_security_group(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """The 'default' security group must not be deleted."""
         conn = shared_ctx.conn
         _stub_empty_lists(conn)
@@ -237,9 +227,7 @@ class TestTeardownHappyPath:
         assert len(project_actions) == 1
         assert project_actions[0].status == ActionStatus.DELETED
 
-    def test_empty_project_deletes_project(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_empty_project_deletes_project(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Teardown of project with no resources still deletes the project."""
         _stub_empty_lists(shared_ctx.conn)
 
@@ -251,9 +239,7 @@ class TestTeardownHappyPath:
         assert actions[0].status == ActionStatus.DELETED
         assert "id=proj-123" in actions[0].details
 
-    def test_dry_run_lists_resources(
-        self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_dry_run_lists_resources(self, dry_run_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Online dry-run lists resources that would be deleted."""
         _stub_empty_lists(dry_run_ctx.conn)
 
@@ -266,9 +252,7 @@ class TestTeardownHappyPath:
         # No actual deletes
         dry_run_ctx.conn.identity.delete_project.assert_not_called()
 
-    def test_offline_dry_run_skips(
-        self, offline_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_offline_dry_run_skips(self, offline_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """Offline mode → SKIPPED with no API calls."""
         actions = teardown_project(sample_project_cfg, "proj-123", offline_ctx)
 
@@ -314,9 +298,7 @@ class TestTeardownErrorHandling:
         conn.identity.delete_project.assert_called_once_with("proj-123")
 
         # Verify WHICH FIP failed vs succeeded by address
-        fip_actions = [
-            a for a in shared_ctx.actions if a.resource_type == "floating_ip"
-        ]
+        fip_actions = [a for a in shared_ctx.actions if a.resource_type == "floating_ip"]
         assert len(fip_actions) == 2
 
         failed = [a for a in fip_actions if a.status == ActionStatus.FAILED]
@@ -327,9 +309,7 @@ class TestTeardownErrorHandling:
         assert failed[0].name == "2.2.2.2"
         assert succeeded[0].name == "1.1.1.1"
 
-    def test_not_found_treated_as_success(
-        self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
-    ) -> None:
+    def test_not_found_treated_as_success(self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig) -> None:
         """NotFoundException during delete is treated as success (already gone)."""
         conn = shared_ctx.conn
         _stub_empty_lists(conn)
@@ -361,9 +341,7 @@ class TestTeardownErrorHandling:
         conn.network.networks.return_value = [net]
 
         # Cinder unavailable for snapshots
-        conn.block_storage.snapshots.side_effect = EndpointNotFound(
-            message="block-storage not found"
-        )
+        conn.block_storage.snapshots.side_effect = EndpointNotFound(message="block-storage not found")
 
         actions = teardown_project(sample_project_cfg, "proj-123", shared_ctx)
 
@@ -428,9 +406,7 @@ class TestTeardownErrorHandling:
         conn.network.networks.return_value = [net]
         conn.network.subnets.return_value = [subnet]
 
-        conn.block_storage.delete_snapshot.side_effect = HttpException(
-            message="snapshot locked"
-        )
+        conn.block_storage.delete_snapshot.side_effect = HttpException(message="snapshot locked")
 
         with pytest.raises(TeardownError, match="1 failure"):
             teardown_project(sample_project_cfg, "proj-123", shared_ctx)
@@ -441,9 +417,7 @@ class TestTeardownErrorHandling:
         conn.identity.delete_project.assert_called_once()
 
         # Verify snapshot failure recorded
-        snapshot_actions = [
-            a for a in shared_ctx.actions if a.resource_type == "snapshot"
-        ]
+        snapshot_actions = [a for a in shared_ctx.actions if a.resource_type == "snapshot"]
         assert len(snapshot_actions) == 1
         assert snapshot_actions[0].status == ActionStatus.FAILED
         assert snapshot_actions[0].name == "snap1"
@@ -456,16 +430,12 @@ class TestTeardownErrorHandling:
         _stub_empty_lists(conn)
 
         # All resources clean, but project deletion fails
-        conn.identity.delete_project.side_effect = HttpException(
-            message="project locked by admin"
-        )
+        conn.identity.delete_project.side_effect = HttpException(message="project locked by admin")
 
         with pytest.raises(TeardownError, match="1 failure"):
             teardown_project(sample_project_cfg, "proj-123", shared_ctx)
 
-        project_actions = [
-            a for a in shared_ctx.actions if a.resource_type == "project"
-        ]
+        project_actions = [a for a in shared_ctx.actions if a.resource_type == "project"]
         assert len(project_actions) == 1
         assert project_actions[0].status == ActionStatus.FAILED
         assert "delete failed" in project_actions[0].details
@@ -499,18 +469,12 @@ class TestTeardownRouterSpecialCases:
         teardown_project(sample_project_cfg, "proj-123", shared_ctx)
 
         assert call_order == ["clear_gateway", "delete_router"]
-        conn.network.update_router.assert_called_once_with(
-            "rtr1-id", external_gateway_info=None
-        )
+        conn.network.update_router.assert_called_once_with("rtr1-id", external_gateway_info=None)
 
     def test_both_services_unavailable(self, mock_conn: MagicMock) -> None:
         """EndpointNotFound → empty errors (safe to delete)."""
-        mock_conn.compute.servers.side_effect = EndpointNotFound(
-            message="compute not found"
-        )
-        mock_conn.block_storage.volumes.side_effect = EndpointNotFound(
-            message="block-storage not found"
-        )
+        mock_conn.compute.servers.side_effect = EndpointNotFound(message="compute not found")
+        mock_conn.block_storage.volumes.side_effect = EndpointNotFound(message="block-storage not found")
 
         errors = safety_check(mock_conn, "proj-123", "test_project")
 
@@ -519,9 +483,7 @@ class TestTeardownRouterSpecialCases:
     def test_only_cinder_unavailable(self, mock_conn: MagicMock) -> None:
         """Cinder absent + no servers → safe."""
         mock_conn.compute.servers.return_value = []
-        mock_conn.block_storage.volumes.side_effect = EndpointNotFound(
-            message="block-storage not found"
-        )
+        mock_conn.block_storage.volumes.side_effect = EndpointNotFound(message="block-storage not found")
 
         errors = safety_check(mock_conn, "proj-123", "test_project")
 
@@ -542,9 +504,7 @@ class TestTeardownRouterSpecialCases:
     def test_volume_api_error_blocks_deletion(self, mock_conn: MagicMock) -> None:
         """Volume check API error → blocks deletion."""
         mock_conn.compute.servers.return_value = []
-        mock_conn.block_storage.volumes.side_effect = HttpException(
-            message="internal error"
-        )
+        mock_conn.block_storage.volumes.side_effect = HttpException(message="internal error")
 
         errors = safety_check(mock_conn, "proj-123", "test_project")
 
@@ -556,9 +516,7 @@ class TestTeardownRouterSpecialCases:
     def test_both_api_errors(self, mock_conn: MagicMock) -> None:
         """Both checks fail → two errors."""
         mock_conn.compute.servers.side_effect = HttpException(message="compute error")
-        mock_conn.block_storage.volumes.side_effect = HttpException(
-            message="cinder error"
-        )
+        mock_conn.block_storage.volumes.side_effect = HttpException(message="cinder error")
 
         errors = safety_check(mock_conn, "proj-123", "test_project")
 
@@ -569,9 +527,7 @@ class TestTeardownRouterSpecialCases:
     def test_servers_block_even_without_cinder(self, mock_conn: MagicMock) -> None:
         """No Cinder + servers present → still unsafe."""
         mock_conn.compute.servers.return_value = [_make_server("vm1")]
-        mock_conn.block_storage.volumes.side_effect = EndpointNotFound(
-            message="block-storage not found"
-        )
+        mock_conn.block_storage.volumes.side_effect = EndpointNotFound(message="block-storage not found")
 
         errors = safety_check(mock_conn, "proj-123", "test_project")
 
@@ -598,12 +554,8 @@ class TestTeardownRouterSpecialCases:
 
         # Should remove both interfaces (port3 has no subnet, skipped)
         assert conn.network.remove_interface_from_router.call_count == 2
-        conn.network.remove_interface_from_router.assert_any_call(
-            "rtr1-id", subnet_id="subnet1-id"
-        )
-        conn.network.remove_interface_from_router.assert_any_call(
-            "rtr1-id", subnet_id="subnet2-id"
-        )
+        conn.network.remove_interface_from_router.assert_any_call("rtr1-id", subnet_id="subnet1-id")
+        conn.network.remove_interface_from_router.assert_any_call("rtr1-id", subnet_id="subnet2-id")
 
     def test_gateway_clear_failure_prevents_router_deletion(
         self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig
@@ -617,9 +569,7 @@ class TestTeardownRouterSpecialCases:
         conn.network.ports.return_value = []
 
         # Gateway clear fails (will be retried by @retry decorator)
-        conn.network.update_router.side_effect = HttpException(
-            message="gateway clear failed"
-        )
+        conn.network.update_router.side_effect = HttpException(message="gateway clear failed")
 
         # Router deletion will fail due to gateway clear failure in pre_delete
         with pytest.raises(TeardownError, match="1 failure"):

@@ -235,9 +235,7 @@ class TestDomainResolution:
 
         assert action.status == ActionStatus.CREATED
         shared_ctx.conn.identity.find_domain.assert_called_once_with("my-custom-domain")
-        shared_ctx.conn.identity.find_project.assert_called_once_with(
-            "test_project", domain_id="custom-domain-uuid"
-        )
+        shared_ctx.conn.identity.find_project.assert_called_once_with("test_project", domain_id="custom-domain-uuid")
         shared_ctx.conn.identity.create_project.assert_called_once_with(
             name="test_project",
             domain_id="custom-domain-uuid",

@@ -106,9 +106,7 @@ class TestCreateAndGrantAssignments:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.CREATED
         assert "granted member to ops" in actions[0].details
-        identity.assign_project_role_to_group.assert_called_once_with(
-            "proj-123", "grp-ops", "role-member"
-        )
+        identity.assign_project_role_to_group.assert_called_once_with("proj-123", "grp-ops", "role-member")
         identity.unassign_project_role_from_group.assert_not_called()
 
     def test_assigns_when_validate_returns_false(
@@ -138,9 +136,7 @@ class TestCreateAndGrantAssignments:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.CREATED
         assert "granted member to ops" in actions[0].details
-        identity.assign_project_role_to_group.assert_called_once_with(
-            "proj-123", "grp-ops", "role-member"
-        )
+        identity.assign_project_role_to_group.assert_called_once_with("proj-123", "grp-ops", "role-member")
 
 
 class TestRevokeAssignments:
@@ -173,9 +169,7 @@ class TestRevokeAssignments:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.UPDATED
         assert "revoked member from legacy-group" in actions[0].details
-        identity.unassign_project_role_from_group.assert_called_once_with(
-            "proj-123", "grp-legacy", "role-member"
-        )
+        identity.unassign_project_role_from_group.assert_called_once_with("proj-123", "grp-legacy", "role-member")
 
     def test_skip_already_absent(
         self,
@@ -509,12 +503,8 @@ class TestEdgeCases:
         assert "granted member to new-group" in created[0].details
         assert "revoked admin from old-group" in updated[0].details
         # Verify correct API calls with correct IDs
-        identity.assign_project_role_to_group.assert_called_once_with(
-            "proj-123", "grp-new-group", "role-member"
-        )
-        identity.unassign_project_role_from_group.assert_called_once_with(
-            "proj-123", "grp-old-group", "role-admin"
-        )
+        identity.assign_project_role_to_group.assert_called_once_with("proj-123", "grp-new-group", "role-member")
+        identity.unassign_project_role_from_group.assert_called_once_with("proj-123", "grp-old-group", "role-admin")
 
     def test_group_caching_across_roles(
         self,

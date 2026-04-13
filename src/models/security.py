@@ -55,15 +55,12 @@ class SecurityGroupConfig:
         """Validate *data* and return a ``SecurityGroupConfig`` (always constructible)."""
         sg_rules = data.get("rules")
         if sg_rules is not None and not isinstance(sg_rules, list):
-            errors.append(
-                f"{label}: security_group.rules must be a list, got {type(sg_rules).__name__}"
-            )
+            errors.append(f"{label}: security_group.rules must be a list, got {type(sg_rules).__name__}")
         elif isinstance(sg_rules, list):
             for idx, rule in enumerate(sg_rules):
                 if not isinstance(rule, dict):
                     errors.append(
-                        f"{label}: security_group.rules[{idx}] "
-                        f"must be a mapping, got {type(rule).__name__}"
+                        f"{label}: security_group.rules[{idx}] " f"must be a mapping, got {type(rule).__name__}"
                     )
         # Construct safely: only include dict rules
         valid_rules = [
