@@ -411,6 +411,7 @@ federation:
   issuer: "https://idp.corp/realms/myrealm"
   mapping_id: "my-mapping"
   group_prefix: "/services/openstack/"
+  user_type: "ephemeral"  # Optional: adds "type" to user element in mapping rules
   role_assignments:
     - idp_group: member
       roles: [member, load-balancer_member]
@@ -419,7 +420,9 @@ federation:
 ```
 
 - Rules are ordered deterministically for stable diffs
-- Per-project overrides for `group_prefix`, `role_assignments`, and `issuer`
+- Per-project overrides for `group_prefix`, `role_assignments`, `issuer`, and `user_type`
+- Domain-aware: when `domain` is set on a project, rules include `"domain": {"name": "..."}` in the projects element
+- `user_type` support: when set (e.g., `"ephemeral"`), rules include `"type"` on the user element — required for cross-domain federated authentication
 - Static rules from `federation_static.json` merged into the mapping
 - Federation mapping is a shared resource — updated once after all projects
 
