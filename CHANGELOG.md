@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Domain-aware federation mapping rules: when `domain` is set on a project, generated rules include `"domain": {"name": "<domain>"}` in the projects element
+- `federation.user_type` field: when set (e.g., `"ephemeral"`), the user element in generated mapping rules includes `"type": "<user_type>"`
+
 ### Changed
 - Type pipeline-level defaults dict with `DefaultsConfig` frozen dataclass
 - FIP allocation: prefer router gateway network/subnet over auto-discovery
