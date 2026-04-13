@@ -7,6 +7,10 @@ state: present
 # from OS_PROJECT_DOMAIN_ID or OS_USER_DOMAIN_NAME env vars. Set a string to override.
 # domain_id: "my-domain"
 domain_id: null
+# domain: OpenStack domain friendly name. When set, federation mapping rules include
+# "domain": {"name": "<domain>"} in the projects element so Keystone resolves the
+# project in the correct domain. Follows the defaults → per-project override pattern.
+# domain: "MyDomain"
 
 # reclaim_floating_ips: default false
 # When a preallocated FIP disappears from OpenStack:
@@ -103,6 +107,12 @@ federation:
   issuer: "https://myidp.corp/realms/myrealm"
   mapping_id: "my-mapping"
   group_prefix: "/services/openstack/"
+  # user_type: default "" (omitted from mapping rules)
+  # When set, adds "type" to the user element in generated federation mapping rules.
+  # Typical values: "ephemeral" (Keystone creates shadow users), "local" (must pre-exist).
+  # Required when projects use a non-default domain — Keystone needs "type": "ephemeral"
+  # on the user element for cross-domain federated authentication to work.
+  # user_type: "ephemeral"
   role_assignments:
     - idp_group: member
       roles:

@@ -62,6 +62,9 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
         group_prefix: str = federation_cfg.group_prefix
         role_assignments = federation_cfg.role_assignments
 
+        domain_name: str | None = project_cfg.domain
+        user_type: str = federation_cfg.user_type
+
         for assignment in role_assignments:
             raw_group = assignment.idp_group
             roles: list[str] = assignment.roles
@@ -70,17 +73,27 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
             groups: list[str] = [raw_group] if isinstance(raw_group, str) else list(raw_group)
             group_paths = sorted(_resolve_group_path(g, project_name, group_prefix) for g in groups)
 
+            # Build user element (add type only when user_type is explicitly set)
+            user_element: dict[str, Any] = {"name": "{0}", "email": "{1}"}
+            if user_type:
+                user_element["type"] = user_type
+
+            # Build projects element (add domain only when domain is set)
+            projects_element: dict[str, Any] = {
+                "projects": [
+                    {
+                        "name": project_name,
+                        "roles": [{"name": r} for r in roles],
+                    }
+                ]
+            }
+            if domain_name is not None:
+                projects_element["domain"] = {"name": domain_name}
+
             rule: dict[str, Any] = {
                 "local": [
-                    {"user": {"name": "{0}", "email": "{1}"}},
-                    {
-                        "projects": [
-                            {
-                                "name": project_name,
-                                "roles": [{"name": r} for r in roles],
-                            }
-                        ]
-                    },
+                    {"user": user_element},
+                    projects_element,
                 ],
                 "remote": [
                     {"type": "OIDC-preferred_username"},

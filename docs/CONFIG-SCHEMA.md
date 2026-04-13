@@ -149,6 +149,8 @@ resource_prefix: dev-2  # Invalid (hyphen)
 
 Set to `null` (or omit entirely) to auto-discover the domain from environment variables. This is useful when a project needs to opt back into auto-discovery even when `defaults.yaml` sets a concrete domain.
 
+**Federation impact**: When `domain` is set, generated federation mapping rules automatically include `"domain": {"name": "<domain>"}` in the projects element, so Keystone resolves the project in the correct domain. See [`federation.user_type`](#federationuser_type) for related cross-domain configuration.
+
 **Default Precedence** (highest to lowest):
 1. Per-project `domain_id` config (string value)
 2. Per-project `domain` config (string value)
@@ -1028,6 +1030,7 @@ federation:
   issuer: <string>              # REQUIRED: Identity provider issuer URL
   mapping_id: <string>          # REQUIRED: Federation mapping ID
   group_prefix: <string>        # REQUIRED: Group path prefix
+  user_type: <string>           # Optional: User type in mapping rules (e.g., "ephemeral")
   role_assignments:             # REQUIRED: Role mappings for IdP groups
     - idp_group: <string | list[string]>  # IdP group name(s) (short or absolute path)
       roles:                    # List of OpenStack roles
@@ -1074,6 +1077,45 @@ federation:
   role_assignments:
     - idp_group: member           # → "/services/openstack/member"
     - idp_group: /admin/superuser # → "/admin/superuser" (no prefix)
+```
+
+#### `federation.user_type`
+
+**Type**: String (optional)
+
+**Default**: `""` (empty — omitted from mapping rules)
+
+**Description**: Sets the `"type"` field on the user element in generated federation mapping rules. When empty (default), the user element contains only `name` and `email`. When set, the specified value is included as `"type"` in the user element.
+
+**Common values**:
+- `"ephemeral"` — Keystone creates shadow users on first login. Required when projects use a non-default domain, because Keystone needs `"type": "ephemeral"` for cross-domain federated authentication.
+- `"local"` — Users must already exist in Keystone before federated login.
+
+**Interaction with `domain`**: The `user_type` and `domain` fields are independent — each is emitted in the generated rule only when its own value is set. However, when using a non-default domain, Keystone typically requires `user_type: "ephemeral"` for federated authentication to work correctly.
+
+```yaml
+# Omitted by default (no "type" in user element)
+federation:
+  user_type: ""
+
+# Enable ephemeral users for cross-domain federation
+federation:
+  user_type: "ephemeral"
+
+# Per-project override
+federation:
+  user_type: "local"
+```
+
+**Generated rule example** (with `user_type: "ephemeral"` and `domain: "MyDomain"`):
+```json
+{
+  "local": [
+    {"user": {"name": "{0}", "email": "{1}", "type": "ephemeral"}},
+    {"domain": {"name": "MyDomain"}, "projects": [{"name": "proj", "roles": [{"name": "member"}]}]}
+  ],
+  "remote": [...]
+}
 ```
 
 #### `federation.role_assignments`
@@ -1522,10 +1564,13 @@ security_group:
       remote_ip_prefix: "10.0.0.0/8"
     - HTTPS
 
+domain: "production-domain"
+
 federation:
   issuer: "https://idp.example.com/realms/production"
   mapping_id: "production-mapping"
   group_prefix: "/production/"
+  user_type: "ephemeral"  # Required for cross-domain federation
   role_assignments:
     - idp_group: developers
       roles:
