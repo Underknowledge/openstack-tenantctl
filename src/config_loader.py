@@ -27,6 +27,7 @@ from src.config_validator import (
     check_cidr_overlaps,
     validate_project,
 )
+from src.models.defaults import DefaultsConfig
 from src.state_store import STATE_KEYS
 
 if TYPE_CHECKING:
@@ -116,9 +117,7 @@ class YamlConfigSource:
                     if isinstance(loaded, dict):
                         defaults = loaded
                     elif loaded is not None:
-                        errors.append(
-                            f"defaults.yaml: expected a mapping, got {type(loaded).__name__}"
-                        )
+                        errors.append(f"defaults.yaml: expected a mapping, got {type(loaded).__name__}")
             except yaml.YAMLError as exc:
                 errors.append(f"defaults.yaml: YAML parse error: {exc}")
         else:
@@ -146,9 +145,7 @@ class YamlConfigSource:
                 continue
 
             if not isinstance(raw, dict):
-                errors.append(
-                    f"{pfile.name}: expected a mapping at top level, got {type(raw).__name__}"
-                )
+                errors.append(f"{pfile.name}: expected a mapping at top level, got {type(raw).__name__}")
                 continue
 
             raw_projects.append(
@@ -240,11 +237,7 @@ def build_projects(
         # Supports both domain_id (for UUIDs) and domain (for friendly names)
         # Precedence: domain_id > domain > env vars > "default"
         if merged.get("domain_id") is None and merged.get("domain") is None:
-            domain_value = (
-                os.environ.get("OS_PROJECT_DOMAIN_ID")
-                or os.environ.get("OS_USER_DOMAIN_NAME")
-                or "default"
-            )
+            domain_value = os.environ.get("OS_PROJECT_DOMAIN_ID") or os.environ.get("OS_USER_DOMAIN_NAME") or "default"
             merged["domain_id"] = domain_value
             logger.debug("Auto-populated domain_id=%s for project %s", domain_value, project_name)
         elif merged.get("domain_id") is None and merged.get("domain") is not None:
@@ -283,14 +276,14 @@ def build_projects(
 def load_all_projects(
     config_dir: str,
     state_store: StateStore | None = None,
-) -> tuple[list[ProjectConfig], dict[str, Any]]:
+) -> tuple[list[ProjectConfig], DefaultsConfig]:
     """Load and validate all project configurations from *config_dir*.
 
     When *state_store* is provided, each project's ``_state_key`` is injected
     (the config file stem), and observed state (FIP IDs, router IPs, etc.) is
     loaded from the state file and merged into the in-memory config dict.
 
-    Returns a tuple of ``(list_of_merged_project_configs, defaults_dict)``.
+    Returns a tuple of ``(list_of_merged_project_configs, defaults)``.
 
     Raises:
         ConfigValidationError: If any validation errors are found.
@@ -308,4 +301,4 @@ def load_all_projects(
         raise ConfigValidationError(errors)
 
     logger.info("Loaded %d project(s) successfully", len(merged))
-    return merged, defaults
+    return merged, DefaultsConfig.from_dict(defaults)
