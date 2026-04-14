@@ -1031,13 +1031,14 @@ federation:
   mapping_id: <string>          # REQUIRED: Federation mapping ID
   group_prefix: <string>        # REQUIRED: Group path prefix
   user_type: <string>           # Optional: User type in mapping rules (e.g., "ephemeral")
-  mapping_mode: <string>        # Optional: "project" (default) or "group"
-  group_name_separator: <string> # Optional: Separator for auto-derived group names (default: " ")
+  mode: <string>                # Optional: Default mode for entries — "project" (default) or "group"
+  group_name_separator: <string> # Optional: Separator for auto-derived group names (default: "-")
   role_assignments:             # REQUIRED: Role mappings for IdP groups
     - idp_group: <string | list[string]>  # IdP group name(s) (short or absolute path)
       roles:                    # List of OpenStack roles
         - <string>
       keystone_group: <string>  # Optional: Explicit Keystone group name override (group mode)
+      mode: <string>            # Optional: Per-entry override — "project" or "group"
 ```
 
 #### `federation.issuer`
@@ -1121,7 +1122,7 @@ federation:
 }
 ```
 
-#### `federation.mapping_mode`
+#### `federation.mode`
 
 **Type**: String (optional)
 
@@ -1129,26 +1130,39 @@ federation:
 
 **Valid values**: `"project"`, `"group"`
 
-**Description**: Controls how federation mapping rules are generated.
+**Description**: Default mode for `role_assignments` entries that don't specify their own `mode`. Each entry can override this with its own `mode` field, allowing mixed strategies in a single project.
 
-- **`"project"`** (default): Rules use `{"projects": [...]}` — the original behavior. Each rule assigns roles directly to the project. **Limitation**: Keystone only applies the *last* matching rule's project assignments, so users needing access to multiple projects simultaneously won't get all assignments.
+- **`"project"`** (default): Rules use `{"projects": [...]}` — direct project assignment. Each rule assigns roles directly to the project.
 - **`"group"`**: Rules use `{"group": {...}}` — recommended for multi-project access. Users are placed into Keystone groups (which accumulate across rules), and those groups have role assignments on the project.
+
+**Mode resolution order**: entry `mode` > federation `mode` > hard-coded default (`"project"`)
 
 **In group mode, tenantctl automatically**:
 1. Creates Keystone groups named `{project_name}{separator}{idp_group}` (before per-project reconciliation)
 2. Derives `group_role_assignments` from `role_assignments` so the groups get the correct roles on the project
 3. Generates mapping rules that place IDP users into those Keystone groups
 
-**Per-project override**: Each project can use a different mode. Group-mode and project-mode projects coexist in the same mapping document.
+**Per-entry override**: Entries within a single project can use different modes. Group-mode and project-mode entries coexist in the same mapping document.
 
 ```yaml
-# Default: project-based rules (original behavior)
+# Default: all entries use project mode
 federation:
-  mapping_mode: "project"
+  mode: "project"
 
-# Group-based rules (multi-project support)
+# All entries default to group mode
 federation:
-  mapping_mode: "group"
+  mode: "group"
+
+# Mixed modes: federation default is project, one entry overrides to group
+federation:
+  mode: "project"
+  role_assignments:
+    - idp_group: member
+      roles: [member]
+      # inherits mode: "project"
+    - idp_group: reader
+      roles: [reader]
+      mode: "group"   # override for this entry only
 ```
 
 **Generated rule example** (group mode, project "my project", idp_group "member"):
@@ -1198,17 +1212,20 @@ role_assignments:
     roles:                               # OpenStack roles to assign
       - <string>
     keystone_group: <string>             # Optional: explicit group name (group mode only)
+    mode: <string>                       # Optional: per-entry override — "project" or "group"
 ```
 
 **Fields**:
 - `idp_group`: Identity provider group name(s) — a non-empty string or a non-empty list of non-empty strings. When a list is given, all resolved group paths are placed in a single `any_one_of` clause, meaning membership in **any** of the listed groups grants the specified roles.
 - `roles`: List of OpenStack role names (list of strings, non-empty)
 - `keystone_group`: Optional explicit Keystone group name override (group mode only). When empty (default), the group name is auto-derived as `{project_name}{separator}{idp_group}`. When set, this exact name is used instead.
+- `mode`: Optional per-entry mode override. When empty, inherits from `federation.mode` (which defaults to `"project"`). Valid values: `"project"`, `"group"`.
 
 **Validation**:
 - `idp_group` must be a non-empty string **or** a non-empty list of non-empty strings
 - `roles` must be a non-empty list of non-empty strings
 - `keystone_group` must be a string (if present)
+- `mode` must be `"project"`, `"group"`, or empty (if present)
 
 **Example** (project mode — default):
 ```yaml
@@ -1243,27 +1260,32 @@ federation:
         - load-balancer_member
 ```
 
-**Example** (group mode):
+**Example** (group mode default with per-entry override):
 ```yaml
 federation:
   issuer: "https://myidp.corp/realms/myrealm"
   mapping_id: "my-mapping"
   group_prefix: "/services/openstack/"
-  mapping_mode: "group"
-  group_name_separator: " "
+  mode: "group"
   user_type: "ephemeral"
   role_assignments:
-    # Auto-derived group: "my project member" with roles [member, load-balancer_member]
+    # Inherits mode: "group" — auto-derived group: "my-project member"
     - idp_group: member
       roles:
         - member
         - load-balancer_member
 
-    # Explicit group name override
+    # Explicit group name override (still group mode)
     - idp_group: reader
       roles:
         - reader
       keystone_group: "my-custom-readers"
+
+    # Override to project mode for this entry only
+    - idp_group: operator
+      roles:
+        - admin
+      mode: "project"
 ```
 
 ---

@@ -114,20 +114,20 @@ federation:
   # on the user element for cross-domain federated authentication to work.
   # user_type: "ephemeral"
 
-  # mapping_mode: default "project"
-  # Controls how federation mapping rules are generated:
+  # mode: default "project"
+  # Default mode for role_assignments entries that don't specify their own.
+  # Controls how federation mapping rules are generated per entry:
   #   "project" — rules use {"projects": [...]} (default, original behavior)
   #   "group"   — rules use {"group": {...}} (recommended for multi-project access)
   #
-  # Why "group"? Keystone only applies the LAST matching rule's project assignments,
-  # so users needing access to multiple projects simultaneously won't get it with
-  # "project" mode. Group assignments accumulate across rules, solving this.
+  # Each role_assignment entry can override this with its own "mode" field,
+  # allowing mixed strategies in a single project.
   #
   # In group mode, tenantctl automatically:
   #   1. Creates Keystone groups named "{project_name}{separator}{idp_group}"
   #   2. Assigns roles from role_assignments to those groups on the project
   #   3. Generates mapping rules that place IDP users into the groups
-  # mapping_mode: "group"
+  # mode: "group"
 
   # group_name_separator: default " " (space)
   # Separator between project name and IDP group in auto-derived Keystone group names.

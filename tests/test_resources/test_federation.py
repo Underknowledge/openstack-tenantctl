@@ -22,17 +22,21 @@ def _make_project_cfg(
     domain: str | None = None,
     domain_id: str = "default",
     user_type: str = "",
-    mapping_mode: str = "project",
+    mode: str = "project",
     group_name_separator: str = " ",
     group_role_assignments: list[dict] | None = None,
 ) -> ProjectConfig:
     """Build a minimal project config with federation settings."""
+    # Simulate config-loader behaviour: inherit federation-level mode into each entry.
+    for entry in role_assignments:
+        if "mode" not in entry:
+            entry["mode"] = mode
     fed_dict: dict = {
         "issuer": issuer,
         "mapping_id": mapping_id,
         "group_prefix": group_prefix,
         "role_assignments": role_assignments,
-        "mapping_mode": mapping_mode,
+        "mode": mode,
         "group_name_separator": group_name_separator,
     }
     if user_type:
@@ -139,7 +143,7 @@ class TestEnsureFederationMapping:
             ),
         ]
 
-        # Current rules differ from generated → would update
+        # Current rules differ from generated -> would update
         dry_run_ctx.current_mapping_rules = [{"old": "rule"}]
 
         action = ensure_federation_mapping(projects, dry_run_ctx)
@@ -154,7 +158,7 @@ class TestEnsureFederationMapping:
         self,
         dry_run_ctx: SharedContext,
     ) -> None:
-        """Online dry-run with matching rules �� SKIPPED."""
+        """Online dry-run with matching rules -> SKIPPED."""
         projects = [
             _make_project_cfg(
                 "test_project",
@@ -661,7 +665,7 @@ class TestDomainAwareFederationRules:
         assert rules[0]["local"][1]["domain"] == {"name": "MyDomain"}
 
     def test_no_domain_no_user_type(self) -> None:
-        """Backward compatibility: neither set → rule unchanged."""
+        """Backward compatibility: neither set -> rule unchanged."""
         projects = [
             _make_project_cfg(
                 "proj",
@@ -738,7 +742,7 @@ class TestDomainAwareFederationRules:
             assert rule["local"][0]["user"]["type"] == "ephemeral"
 
     def test_mixed_projects(self) -> None:
-        """One project with domain+user_type, one without → only configured project gets elements."""
+        """One project with domain+user_type, one without -> only configured project gets elements."""
         projects = [
             _make_project_cfg(
                 "domain_proj",
@@ -775,7 +779,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -792,7 +796,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "my project",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -805,7 +809,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "reader", "roles": ["reader"]}],
-                mapping_mode="group",
+                mode="group",
                 group_name_separator=" ",
             ),
         ]
@@ -818,7 +822,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
                 group_name_separator="-",
             ),
         ]
@@ -831,7 +835,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"], "keystone_group": "custom-group"}],
-                mapping_mode="group",
+                mode="group",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -843,7 +847,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "/services/openstack/org/member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -856,7 +860,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": ["alpha", "beta"], "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -869,7 +873,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
                 user_type="ephemeral",
             ),
         ]
@@ -882,7 +886,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
                 domain="MyDomain",
             ),
         ]
@@ -896,7 +900,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -909,7 +913,7 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="project",
+                mode="project",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -924,12 +928,12 @@ class TestGroupModeRules:
             _make_project_cfg(
                 "group_proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="group",
+                mode="group",
             ),
             _make_project_cfg(
                 "project_proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                mapping_mode="project",
+                mode="project",
             ),
         ]
         rules = _build_generated_rules(projects)
@@ -950,7 +954,7 @@ class TestAugmentGroupRoleAssignments:
                 {"idp_group": "member", "roles": ["member", "load-balancer_member"]},
                 {"idp_group": "reader", "roles": ["reader"]},
             ],
-            mapping_mode="group",
+            mode="group",
         )
         result = augment_group_role_assignments(cfg)
 
@@ -965,7 +969,7 @@ class TestAugmentGroupRoleAssignments:
         cfg = _make_project_cfg(
             "proj",
             [{"idp_group": "member", "roles": ["member"]}],
-            mapping_mode="project",
+            mode="project",
         )
         result = augment_group_role_assignments(cfg)
 
@@ -975,7 +979,7 @@ class TestAugmentGroupRoleAssignments:
         cfg = _make_project_cfg(
             "proj",
             [{"idp_group": "member", "roles": ["member"]}],
-            mapping_mode="group",
+            mode="group",
             group_role_assignments=[{"group": "manual-group", "roles": ["admin"]}],
         )
         result = augment_group_role_assignments(cfg)
@@ -998,7 +1002,7 @@ class TestAugmentGroupRoleAssignments:
         cfg = _make_project_cfg(
             "proj",
             [{"idp_group": "member", "roles": ["member"]}],
-            mapping_mode="group",
+            mode="group",
         )
         effective = augment_group_role_assignments(cfg)
 
@@ -1012,3 +1016,56 @@ class TestAugmentGroupRoleAssignments:
         assert len(revoked.group_role_assignments) == 1
         assert revoked.group_role_assignments[0].state == "absent"
         assert revoked.group_role_assignments[0].group == "proj member"
+
+
+class TestMixedEntryModes:
+    """Per-entry mode: mixed project and group assignments in one project."""
+
+    def test_mixed_modes_in_single_project(self) -> None:
+        """One entry project-mode, one entry group-mode in the same project."""
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member"], "mode": "project"},
+                {"idp_group": "reader", "roles": ["reader"], "mode": "group"},
+            ],
+        )
+        rules = _build_generated_rules([cfg])
+
+        assert len(rules) == 2
+        # First rule: project mode (sorted by group path)
+        assert "projects" in rules[0]["local"][1]
+        assert "group" not in rules[0]["local"][1]
+        # Second rule: group mode
+        assert "group" in rules[1]["local"][1]
+        assert "projects" not in rules[1]["local"][1]
+        assert rules[1]["local"][1]["group"]["name"] == "proj reader"
+
+    def test_augment_only_group_mode_entries(self) -> None:
+        """augment_group_role_assignments only adds entries for mode=group."""
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member"], "mode": "project"},
+                {"idp_group": "reader", "roles": ["reader"], "mode": "group"},
+            ],
+        )
+        result = augment_group_role_assignments(cfg)
+
+        # Only one derived assignment (from the group-mode entry)
+        assert len(result.group_role_assignments) == 1
+        assert result.group_role_assignments[0].group == "proj reader"
+        assert result.group_role_assignments[0].roles == ["reader"]
+
+    def test_all_project_mode_no_augmentation(self) -> None:
+        """When all entries are project-mode, no group_role_assignments added."""
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member"], "mode": "project"},
+                {"idp_group": "reader", "roles": ["reader"], "mode": "project"},
+            ],
+        )
+        result = augment_group_role_assignments(cfg)
+
+        assert result.group_role_assignments == []

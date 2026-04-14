@@ -201,8 +201,9 @@ def sample_project_cfg() -> ProjectConfig:
                     {
                         "idp_group": "member",
                         "roles": ["member", "load-balancer_member"],
+                        "mode": "project",
                     },
-                    {"idp_group": "reader", "roles": ["reader"]},
+                    {"idp_group": "reader", "roles": ["reader"], "mode": "project"},
                 ],
             },
         }

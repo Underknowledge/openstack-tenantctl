@@ -198,6 +198,17 @@ def _load_state_into_config(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_federation_entry_modes(project: dict[str, Any]) -> None:
+    """Populate ``mode`` on each role_assignment from the federation-level default."""
+    fed = project.get("federation")
+    if not fed or not isinstance(fed, dict):
+        return
+    default_mode = fed.get("mode", "project")
+    for entry in fed.get("role_assignments", []):
+        if isinstance(entry, dict) and not entry.get("mode"):
+            entry["mode"] = default_mode
+
+
 def build_projects(
     defaults: dict[str, Any],
     raw_projects: list[RawProject],
@@ -228,6 +239,9 @@ def build_projects(
 
         # Expand security group rule presets before validation
         expand_security_group_rules(merged, errors)
+
+        # Resolve per-entry federation mode from federation-level default
+        _resolve_federation_entry_modes(merged)
 
         # Auto-populate gateway_ip and allocation_pools from CIDR if not specified
         if merged.get("state", "present") != "absent":

@@ -876,9 +876,9 @@ def ensure_federation_mapping(
 - Otherwise: prepend `{group_prefix}{project_name}/`
 - `idp_group` can be a single string or a list of strings (placed in `any_one_of` clause)
 
-**Config fields used** (per project): `cfg.federation.issuer`, `cfg.federation.mapping_id`, `cfg.federation.group_prefix`, `cfg.federation.mapping_mode`, `cfg.federation.group_name_separator`, `cfg.federation.role_assignments[].idp_group`, `cfg.federation.role_assignments[].roles`, `cfg.federation.role_assignments[].keystone_group`, `cfg.domain`
+**Config fields used** (per project): `cfg.federation.issuer`, `cfg.federation.mapping_id`, `cfg.federation.group_prefix`, `cfg.federation.mode`, `cfg.federation.group_name_separator`, `cfg.federation.role_assignments[].idp_group`, `cfg.federation.role_assignments[].roles`, `cfg.federation.role_assignments[].keystone_group`, `cfg.federation.role_assignments[].mode`, `cfg.domain`
 
-**Mapping modes**:
+**Per-entry modes** (resolved at config load time: entry > federation > `"project"`):
 - `"project"` (default): rules use `{"projects": [...]}` — original behavior
 - `"group"`: rules use `{"group": {...}}` — Keystone group name is auto-derived as `{project_name}{separator}{idp_group}` (or explicit `keystone_group` override)
 
@@ -891,11 +891,12 @@ def augment_group_role_assignments(cfg: ProjectConfig) -> ProjectConfig:
     """Add federation-derived group_role_assignments in group mapping mode."""
 ```
 
-**Returns**: Modified `ProjectConfig` with derived `GroupRoleAssignment` entries appended (or the original config unchanged if not in group mode).
+**Returns**: Modified `ProjectConfig` with derived `GroupRoleAssignment` entries appended (or the original config unchanged if no group-mode entries exist).
 
 **Behavior**:
-- If `cfg.federation.mapping_mode != "group"`, returns `cfg` unchanged
-- For each `role_assignment`, derives a Keystone group name and appends a `GroupRoleAssignment(group=..., roles=...)` to the config
+- If `cfg.federation` is not set, returns `cfg` unchanged
+- For each `role_assignment` entry where `mode == "group"`, derives a Keystone group name and appends a `GroupRoleAssignment(group=..., roles=...)` to the config
+- Entries with `mode == "project"` are skipped (no intermediate Keystone group needed)
 - Existing manual `group_role_assignments` are preserved; derived entries are appended
 
 **Used by**: `_reconcile_present()` and `_reconcile_absent()` in the reconciler, so that `ensure_group_role_assignments()` wires federation-derived groups to project roles.
@@ -917,8 +918,8 @@ def ensure_keystone_groups(
 **Returns**: List of Action objects (CREATED, SKIPPED per group).
 
 **Behavior**:
-- Iterates all `present`-state projects with `mapping_mode == "group"`
-- Derives group names from each `role_assignment` entry
+- Iterates all `present`-state projects
+- Derives group names from each `role_assignment` entry where `mode == "group"`
 - Deduplicates: same group name across projects is created once
 - For each unique group: `find_group()` → skip if exists, `create_group()` if missing
 - Idempotent, dry-run aware, offline aware

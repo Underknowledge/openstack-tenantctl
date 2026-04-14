@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
     from src.models import ProjectConfig
 
-from src.utils import Action, ActionStatus, SharedContext, retry
+from src.utils import Action, ActionStatus, SharedContext, identity_v3, retry
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def _resolve_domain(conn: Connection, domain_ref: str) -> str:
     Raises:
         ValueError: If the domain cannot be found.
     """
-    domain = conn.identity.find_domain(domain_ref)
+    domain = identity_v3(conn).find_domain(domain_ref)
     if domain is None:
         msg = f"Could not find domain: {domain_ref}"
         raise ValueError(msg)
@@ -38,7 +38,7 @@ def _find_project(
     domain_id: str,
 ) -> Project | None:
     """Look up a project by name in the specified domain."""
-    return conn.identity.find_project(name, domain_id=domain_id)  # type: ignore[no-any-return]
+    return identity_v3(conn).find_project(name, domain_id=domain_id)  # type: ignore[no-any-return]
 
 
 def find_existing_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[str | None, str | None]:
@@ -136,7 +136,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
 
     # Normal mode: create or update.
     if project is None:
-        project = ctx.conn.identity.create_project(
+        project = identity_v3(ctx.conn).create_project(
             name=name,
             domain_id=domain_id,
             description=description,
@@ -155,7 +155,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
     needs_update = project.description != description or project.is_enabled != enabled
 
     if needs_update:
-        project = ctx.conn.identity.update_project(
+        project = identity_v3(ctx.conn).update_project(
             project.id,
             description=description,
             is_enabled=enabled,

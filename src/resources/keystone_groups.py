@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from src.models import ProjectConfig, ProjectState
 from src.resources.federation import _derive_group_name
 from src.resources.project import _resolve_domain
-from src.utils import Action, ActionStatus, SharedContext, retry
+from src.utils import Action, ActionStatus, SharedContext, identity_v3, retry
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +28,13 @@ def _find_group(conn: Connection, name: str, domain_id: str | None = None) -> Gr
     kwargs: dict[str, str] = {}
     if domain_id:
         kwargs["domain_id"] = domain_id
-    return conn.identity.find_group(name, **kwargs)  # type: ignore[no-any-return]
+    return identity_v3(conn).find_group(name, **kwargs)  # type: ignore[no-any-return]
 
 
 @retry()
 def _create_group(conn: Connection, name: str, domain_id: str) -> None:
     """Create a Keystone group."""
-    conn.identity.create_group(name=name, domain_id=domain_id)
+    identity_v3(conn).create_group(name=name, domain_id=domain_id)
 
 
 def ensure_keystone_groups(
@@ -43,9 +43,9 @@ def ensure_keystone_groups(
 ) -> list[Action]:
     """Create Keystone groups needed by group-mode federation.
 
-    Iterates PRESENT projects with ``mapping_mode == "group"``, derives
-    group names from each ``role_assignment`` entry, deduplicates, and
-    creates missing groups.  Idempotent: existing groups are skipped.
+    Iterates PRESENT projects, derives group names from each
+    ``role_assignment`` entry whose ``mode == "group"``, deduplicates,
+    and creates missing groups.  Idempotent: existing groups are skipped.
 
     Returns a list of actions taken.
     """
@@ -54,10 +54,12 @@ def ensure_keystone_groups(
     for cfg in all_projects:
         if cfg.state != ProjectState.PRESENT:
             continue
-        if not cfg.federation or cfg.federation.mapping_mode != "group":
+        if not cfg.federation:
             continue
         domain_id = cfg.domain_id
         for assignment in cfg.federation.role_assignments:
+            if assignment.mode != "group":
+                continue
             ks_group = _derive_group_name(cfg.name, assignment, cfg.federation.group_name_separator)
             if ks_group not in needed:
                 needed[ks_group] = domain_id

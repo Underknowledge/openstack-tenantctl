@@ -33,6 +33,7 @@ from src.utils import (
     ActionStatus,
     SharedContext,
     TeardownError,
+    identity_v3,
     retry,
 )
 
@@ -169,7 +170,7 @@ def _delete_security_group(conn: Connection, sg_id: str) -> None:
 
 @retry()
 def _delete_project(conn: Connection, project_id: str) -> None:
-    conn.identity.delete_project(project_id)
+    identity_v3(conn).delete_project(project_id)
 
 
 # ---------------------------------------------------------------------------

@@ -1864,3 +1864,105 @@ class TestMinimumValidProjectHelper:
         pools = merged_projects[0].network.subnet.allocation_pools
         assert pools[0].start == "192.168.1.100"
         assert pools[0].end == "192.168.1.200"
+
+
+# ---------------------------------------------------------------------------
+# Federation entry mode resolution tests
+# ---------------------------------------------------------------------------
+
+
+class TestFederationEntryModeResolution:
+    """Verify _resolve_federation_entry_modes propagates mode to entries."""
+
+    def test_entries_inherit_federation_default(self, tmp_path: Path) -> None:
+        """Entries without mode inherit the federation-level mode."""
+        project = _minimum_valid_project()
+        project["federation"] = {
+            "issuer": "https://idp.example.com",
+            "mapping_id": "m",
+            "mode": "group",
+            "role_assignments": [
+                {"idp_group": "member", "roles": ["member"]},
+            ],
+        }
+        config_dir = _write_config(tmp_path, projects={"test": project})
+
+        merged_projects, _ = load_all_projects(config_dir)
+
+        entry = merged_projects[0].federation.role_assignments[0]
+        assert entry.mode == "group"
+
+    def test_entry_override_wins(self, tmp_path: Path) -> None:
+        """Entry-level mode overrides federation-level mode."""
+        project = _minimum_valid_project()
+        project["federation"] = {
+            "issuer": "https://idp.example.com",
+            "mapping_id": "m",
+            "mode": "group",
+            "role_assignments": [
+                {"idp_group": "member", "roles": ["member"], "mode": "project"},
+            ],
+        }
+        config_dir = _write_config(tmp_path, projects={"test": project})
+
+        merged_projects, _ = load_all_projects(config_dir)
+
+        entry = merged_projects[0].federation.role_assignments[0]
+        assert entry.mode == "project"
+
+    def test_missing_federation_mode_defaults_to_project(self, tmp_path: Path) -> None:
+        """When federation has no mode, entries inherit 'project'."""
+        project = _minimum_valid_project()
+        project["federation"] = {
+            "issuer": "https://idp.example.com",
+            "mapping_id": "m",
+            "role_assignments": [
+                {"idp_group": "member", "roles": ["member"]},
+            ],
+        }
+        config_dir = _write_config(tmp_path, projects={"test": project})
+
+        merged_projects, _ = load_all_projects(config_dir)
+
+        entry = merged_projects[0].federation.role_assignments[0]
+        assert entry.mode == "project"
+
+    def test_defaults_yaml_mode_inherited(self, tmp_path: Path) -> None:
+        """Federation mode from defaults.yaml propagates to entries."""
+        defaults: dict[str, Any] = {
+            "federation": {
+                "issuer": "https://idp.example.com",
+                "mapping_id": "m",
+                "mode": "group",
+                "role_assignments": [
+                    {"idp_group": "reader", "roles": ["reader"]},
+                ],
+            },
+        }
+        project = _minimum_valid_project()
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
+
+        merged_projects, _ = load_all_projects(config_dir)
+
+        entry = merged_projects[0].federation.role_assignments[0]
+        assert entry.mode == "group"
+
+    def test_mixed_modes_in_one_project(self, tmp_path: Path) -> None:
+        """Entries can have different modes within one project."""
+        project = _minimum_valid_project()
+        project["federation"] = {
+            "issuer": "https://idp.example.com",
+            "mapping_id": "m",
+            "mode": "project",
+            "role_assignments": [
+                {"idp_group": "member", "roles": ["member"]},
+                {"idp_group": "reader", "roles": ["reader"], "mode": "group"},
+            ],
+        }
+        config_dir = _write_config(tmp_path, projects={"test": project})
+
+        merged_projects, _ = load_all_projects(config_dir)
+
+        entries = merged_projects[0].federation.role_assignments
+        assert entries[0].mode == "project"
+        assert entries[1].mode == "group"
