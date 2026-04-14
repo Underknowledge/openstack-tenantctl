@@ -23,7 +23,7 @@ Comprehensive technical specification for OpenStack TenantCtl - a declarative te
 
 ### 1.1 Purpose
 
-OpenStack TenantCtl is a Python-based CLI tool that provisions and manages OpenStack projects (tenants) declaratively from YAML configuration files. It enables IaaS consumption by automating tenant onboarding — creating projects, setting up base network stacks, configuring quotas, and establishing access control through federation and group roles. The tool ensures idempotent, reliable provisioning of complete project environments.
+OpenStack TenantCtl is a Python-based CLI tool and library that provisions and manages OpenStack projects (tenants) declaratively from YAML configuration files. It enables IaaS consumption by automating tenant onboarding — creating projects, setting up base network stacks, configuring quotas, and establishing access control through federation and group roles. The tool ensures idempotent, reliable provisioning of complete project environments.
 
 ### 1.2 Key Design Principles
 
@@ -103,15 +103,15 @@ OpenStack TenantCtl is a Python-based CLI tool that provisions and manages OpenS
 │    4. ensure_preallocated_network() → Pre-allocate network stack │
 │    5. ensure_quotas()           → Set all quotas                 │
 │    6. ensure_baseline_sg()      → Security group + rules         │
-│    7. ensure_group_roles()      → Grant/revoke group roles       │
-│    8. ensure_compute_unshelved() → Unshelve previously shelved   │
+│    7. ensure_group_role_assignments() → Grant/revoke group roles  │
+│    8. unshelve_all_servers()    → Unshelve previously shelved    │
 │                                                                  │
 │  IF state == "locked":                                           │
 │    1. ensure_project(enabled=False)                              │
-│    2. ensure_compute_shelved()  → Shelve ACTIVE servers          │
+│    2. shelve_all_servers()     → Shelve ACTIVE servers           │
 │                                                                  │
 │  IF state == "absent":                                           │
-│    1. ensure_teardown()         → Safe project deletion          │
+│    1. teardown_project()       → Safe project deletion           │
 │                                                                  │
 │  After all projects:                                             │
 │    → ensure_federation_mapping() → Update shared mapping         │
@@ -152,17 +152,19 @@ Resources are provisioned in state-dependent strict dependency order:
 
 ### 2.3 Module Organization
 
-29 Python modules across the codebase:
+31 Python modules across the codebase:
 
 ```
 openstack-tenantctl/
 ├── src/
-│   ├── __init__.py          # Package marker
-│   ├── main.py              # CLI entry point, three-phase orchestration
+│   ├── __init__.py          # Public API re-exports with __all__
+│   ├── client.py            # Library API: TenantCtl class, RunResult
+│   ├── context.py           # Context-building helpers (external networks, federation)
+│   ├── main.py              # Thin CLI adapter delegating to TenantCtl
 │   ├── config_loader.py     # Configuration loading, merging, validation
 │   ├── config_resolver.py   # Configuration resolution and merging
 │   ├── config_validator.py  # Configuration validation logic
-│   ├── state_store.py       # StateStore protocol + YamlFileStateStore
+│   ├── state_store.py       # StateStore protocol + YamlFileStateStore + InMemoryStateStore
 │   ├── reconciler.py        # Per-project orchestration, state dispatch
 │   ├── unit_parser.py       # Parse quota units (e.g., "10 GiB")
 │   ├── utils.py             # SharedContext, Action, retry decorator
@@ -174,7 +176,7 @@ openstack-tenantctl/
 │   │   ├── quotas.py            # QuotaConfig
 │   │   ├── federation.py        # FederationConfig
 │   │   ├── access.py            # FederationRoleAssignment, GroupRoleAssignment
-│   │   └── project.py           # ProjectConfig (top-level)
+│   │   └── project.py           # ProjectConfig (top-level, with build() factory)
 │   └── resources/
 │       ├── __init__.py
 │       ├── project.py           # Project create/update
@@ -198,6 +200,11 @@ openstack-tenantctl/
 └── tests/
     ├── conftest.py              # Shared fixtures (mock conn, context)
     ├── test_main.py
+    ├── test_client.py           # TenantCtl library API tests
+    ├── test_context.py          # Context-building helper tests
+    ├── test_public_api.py       # Public API surface verification
+    ├── test_project_build.py    # ProjectConfig.build() tests
+    ├── test_in_memory_state_store.py  # InMemoryStateStore tests
     ├── test_config_loader.py
     ├── test_reconciler.py
     └── test_resources/
@@ -215,8 +222,13 @@ openstack-tenantctl/
 
 ```
 ┌────────────┐
-│   CLI      │  main.py - Argument parsing, logging setup
+│   CLI      │  main.py - Thin adapter: parse args, print summary
 └─────┬──────┘
+      │
+      ▼
+┌────────────────┐
+│   TenantCtl    │  client.py - Library API, pipeline orchestrator
+└─────┬──────────┘
       │
       ├─→ [Phase 1] config_loader.py
       │             ├─ Load YAML files
@@ -224,7 +236,7 @@ openstack-tenantctl/
       │             ├─ Placeholder substitution
       │             └─ Comprehensive validation
       │
-      ├─→ [Phase 2] OpenStack connection (openstacksdk)
+      ├─→ [Phase 2] context.py + OpenStack connection (openstacksdk)
       │             ├─ Authenticate with retry
       │             ├─ Resolve external network
       │             ├─ Load federation mapping
@@ -357,18 +369,28 @@ def ensure_preallocated_fips(cfg, project_id, ctx):
 ```python
 @dataclass
 class SharedContext:
-    conn: openstack.connection.Connection  # OpenStack API client
+    conn: openstack.connection.Connection | None = None  # OpenStack API client (None in offline dry-run)
     dry_run: bool = False                  # Whether to skip actual changes
-    external_net_id: str = ""              # Resolved external network ID
+    external_net_id: str = ""              # Resolved default external network ID
+    external_subnet_id: str = ""           # Resolved default external subnet ID
+    external_network_map: dict[str, str] = field(default_factory=dict)  # name→id map of external networks
     current_mapping_rules: list[Any] = field(default_factory=list)  # Federation
     mapping_exists: bool = False           # Whether mapping exists
     static_mapping_rules: list[Any] = field(default_factory=list)   # Static rules
     actions: list[Action] = field(default_factory=list)  # All recorded actions
     failed_projects: list[str] = field(default_factory=list)  # Failed project names
+    current_project_id: str = ""           # Project ID being reconciled
+    current_project_name: str = ""         # Project name being reconciled
+    state_store: StateStore | None = None  # State persistence backend
 
-    def record(self, status: ActionStatus, resource_type: str, name: str, details: str = "") -> Action:
+    def record(
+        self, status: ActionStatus, resource_type: str, name: str, details: str = "",
+        project_id: str | None = None, project_name: str | None = None,
+    ) -> Action:
         """Record an action and return it."""
-        action = Action(status=status, resource_type=resource_type, name=name, details=details)
+        action = Action(status=status, resource_type=resource_type, name=name, details=details,
+                        project_id=project_id or self.current_project_id,
+                        project_name=project_name or self.current_project_name)
         self.actions.append(action)
         return action
 ```
@@ -1093,7 +1115,7 @@ See [CONFIG-SCHEMA.md](CONFIG-SCHEMA.md#validation-rules) for complete validatio
 
 ```python
 for cfg in projects:
-    project_name = cfg["name"]
+    project_name = cfg.name
     try:
         _reconcile_project(cfg, ctx)
     except Exception:
@@ -1113,10 +1135,11 @@ for cfg in projects:
 
 **Three-tier safety**:
 
-1. **No connection created** (Phase 2 skipped entirely)
+1. **No connection created** (Phase 2 skipped in offline mode)
    ```python
-   if args.dry_run:
-       ctx = SharedContext(conn=None, dry_run=True)
+   # TenantCtl._setup_context() handles this:
+   # offline=True → ctx = SharedContext(conn=None, dry_run=True)
+   # offline=False + dry_run=True → connects but only reads
    ```
 
 2. **Early return in resource functions**

@@ -17,7 +17,9 @@ Thread Safety & Concurrency:
 
 from __future__ import annotations
 
+import dataclasses
 import enum
+import ipaddress
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -26,6 +28,8 @@ if TYPE_CHECKING:
 
 import yaml
 from filelock import FileLock
+
+__all__ = ["InMemoryStateStore", "StateStore", "YamlFileStateStore"]
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +43,68 @@ STATE_KEYS: frozenset[str] = frozenset(
 )
 
 
+def _serialize_value(value: Any) -> Any:
+    """Coerce complex types to JSON-serializable primitives.
+
+    Automatically converts known complex types to ensure consistent behavior
+    across StateStore implementations:
+
+    - ``enum.Enum`` → ``.value`` (plain string/int/etc.)
+    - ``ipaddress`` objects → ``str()`` representation
+    - Dataclass instances → ``TypeError`` (use ``.to_dict()`` explicitly)
+
+    Args:
+        value: The value to serialize.
+
+    Returns:
+        A JSON-serializable version of the value.
+
+    Raises:
+        TypeError: If *value* is a dataclass instance (must call ``.to_dict()``).
+    """
+    # Enum → plain value
+    if isinstance(value, enum.Enum):
+        return value.value
+
+    # ipaddress objects → string representation
+    if isinstance(
+        value,
+        (
+            ipaddress.IPv4Address,
+            ipaddress.IPv6Address,
+            ipaddress.IPv4Network,
+            ipaddress.IPv6Network,
+        ),
+    ):
+        return str(value)
+
+    # Dataclass instances → reject with helpful error
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        msg = (
+            f"Cannot save dataclass instance {type(value).__name__} directly. "
+            f"Call .to_dict() first: store.save(key, path, obj.to_dict())"
+        )
+        raise TypeError(msg)
+
+    # Everything else (primitives, dicts, lists) passes through
+    return value
+
+
 @runtime_checkable
 class StateStore(Protocol):
-    """Protocol for reading/writing per-project observed state."""
+    """Protocol for reading/writing per-project observed state.
+
+    **Value Serialization:**
+        Values passed to ``save()`` are automatically coerced to ensure
+        consistent behavior across implementations:
+
+        - ``enum.Enum`` → ``.value``
+        - ``ipaddress.IPv4Address``, ``IPv6Address``, networks → ``str()``
+        - Dataclass instances → ``TypeError`` (use ``.to_dict()`` explicitly)
+
+        Primitives (str, int, float, bool, None) and containers (list, dict)
+        pass through unchanged.
+    """
 
     def load(self, state_key: str) -> dict[str, Any]: ...
 
@@ -163,11 +226,8 @@ class YamlFileStateStore:
                     current[key] = {}
                 current = current[key]
 
-            # Coerce enums to their plain value so safe_dump never sees
-            # Python-specific types (StrEnum, IntEnum, etc.).
-            if isinstance(value, enum.Enum):
-                value = value.value
-            current[key_path[-1]] = value
+            # Coerce complex types to JSON-serializable primitives
+            current[key_path[-1]] = _serialize_value(value)
 
             # Atomic write: write to temp file, then atomic rename
             temp_path = path.with_suffix(".yaml.tmp")
@@ -181,3 +241,60 @@ class YamlFileStateStore:
             value,
             path,
         )
+
+
+class InMemoryStateStore:
+    """Dict-backed ``StateStore`` for programmatic / library use.
+
+    No filesystem I/O — state lives in a plain ``dict[str, dict]``.
+    Pre-seed with *initial* to inject state loaded from an external system
+    (database, REST API, etc.).  After reconciliation, call
+    :meth:`snapshot` to bulk-read all updated state for write-back.
+    """
+
+    def __init__(self, initial: dict[str, dict[str, Any]] | None = None) -> None:
+        import copy
+
+        self._data: dict[str, dict[str, Any]] = copy.deepcopy(initial) if initial else {}
+
+    def load(self, state_key: str) -> dict[str, Any]:
+        """Return state for *state_key*, or ``{}`` if not present.
+
+        Returns a deep copy so callers cannot mutate internal state.
+        """
+        import copy
+
+        return copy.deepcopy(self._data.get(state_key, {}))
+
+    def save(self, state_key: str, key_path: list[str], value: Any) -> None:
+        """Set a nested key inside *state_key*.
+
+        Semantics mirror :meth:`YamlFileStateStore.save`: *key_path* is
+        traversed left-to-right, creating intermediate dicts as needed.
+
+        Raises:
+            ValueError: If *key_path* is empty.
+        """
+        if not key_path:
+            msg = "key_path must not be empty"
+            raise ValueError(msg)
+
+        data = self._data.setdefault(state_key, {})
+
+        current = data
+        for key in key_path[:-1]:
+            if key not in current or not isinstance(current[key], dict):
+                current[key] = {}
+            current = current[key]
+
+        current[key_path[-1]] = _serialize_value(value)
+
+    def snapshot(self) -> dict[str, dict[str, Any]]:
+        """Return a deep copy of **all** stored state, keyed by state_key.
+
+        Use this after ``TenantCtl.run()`` to bulk-read reconciliation
+        results for write-back to an external system.
+        """
+        import copy
+
+        return copy.deepcopy(self._data)

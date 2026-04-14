@@ -75,7 +75,7 @@ def test_skips_when_config_section_absent(
     func: Any,
     key_to_delete: str,
     expected_resource_type: str,
-    returns_list: bool,  # noqa: FBT001
+    returns_list: bool,
     sample_project_cfg: ProjectConfig,
     shared_ctx: Any,
 ) -> None:

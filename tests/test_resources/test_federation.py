@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 
+import pytest
+
 from src.models import ProjectConfig
 from src.resources.federation import (
     _build_generated_rules,
@@ -474,28 +476,16 @@ class TestGroupPathResolution:
 class TestProjectStateFiltering:
     """Only projects with state=present generate federation rules."""
 
-    def test_locked_project_excluded(self) -> None:
+    @pytest.mark.parametrize("state", ["locked", "absent"])
+    def test_non_present_project_excluded(self, state: str) -> None:
         cfg = _make_project_cfg(
-            "locked_proj",
+            "excluded_proj",
             [{"idp_group": "member", "roles": ["member"]}],
         )
-        projects = [dataclasses.replace(cfg, state="locked")]
+        projects = [dataclasses.replace(cfg, state=state)]
 
         rules = _build_generated_rules(projects)
 
-        # Verify locked project produces no rules
-        assert rules == []
-
-    def test_absent_project_excluded(self) -> None:
-        cfg = _make_project_cfg(
-            "gone_proj",
-            [{"idp_group": "member", "roles": ["member"]}],
-        )
-        projects = [dataclasses.replace(cfg, state="absent")]
-
-        rules = _build_generated_rules(projects)
-
-        # Verify absent project produces no rules
         assert rules == []
 
     def test_mixed_states_only_present_generates_rules(self) -> None:
@@ -649,64 +639,46 @@ class TestDomainAwareFederationRules:
         assert user_element["name"] == "{0}"
         assert user_element["email"] == "{1}"
 
-    def test_domain_and_user_type_together(self) -> None:
+    @pytest.mark.parametrize(
+        ("domain", "user_type", "expect_domain", "expect_type"),
+        [
+            ("MyDomain", "ephemeral", {"name": "MyDomain"}, "ephemeral"),
+            (None, None, None, None),
+            ("X", None, {"name": "X"}, None),
+            (None, "ephemeral", None, "ephemeral"),
+        ],
+        ids=["both", "neither", "domain-only", "user-type-only"],
+    )
+    def test_domain_and_user_type_combinations(
+        self,
+        domain: str | None,
+        user_type: str | None,
+        expect_domain: dict[str, str] | None,
+        expect_type: str | None,
+    ) -> None:
+        kwargs: dict[str, str] = {}
+        if domain is not None:
+            kwargs["domain"] = domain
+        if user_type is not None:
+            kwargs["user_type"] = user_type
         projects = [
             _make_project_cfg(
                 "proj",
                 [{"idp_group": "member", "roles": ["member"]}],
-                domain="MyDomain",
-                user_type="ephemeral",
+                **kwargs,
             ),
         ]
         rules = _build_generated_rules(projects)
 
         assert len(rules) == 1
-        assert rules[0]["local"][0]["user"]["type"] == "ephemeral"
-        assert rules[0]["local"][1]["domain"] == {"name": "MyDomain"}
-
-    def test_no_domain_no_user_type(self) -> None:
-        """Backward compatibility: neither set -> rule unchanged."""
-        projects = [
-            _make_project_cfg(
-                "proj",
-                [{"idp_group": "member", "roles": ["member"]}],
-            ),
-        ]
-        rules = _build_generated_rules(projects)
-
-        assert len(rules) == 1
-        # No "type" key on user element
-        assert "type" not in rules[0]["local"][0]["user"]
-        # No "domain" key on projects element
-        assert "domain" not in rules[0]["local"][1]
-
-    def test_domain_without_user_type(self) -> None:
-        projects = [
-            _make_project_cfg(
-                "proj",
-                [{"idp_group": "member", "roles": ["member"]}],
-                domain="X",
-            ),
-        ]
-        rules = _build_generated_rules(projects)
-
-        assert len(rules) == 1
-        assert rules[0]["local"][1]["domain"] == {"name": "X"}
-        assert "type" not in rules[0]["local"][0]["user"]
-
-    def test_user_type_without_domain(self) -> None:
-        projects = [
-            _make_project_cfg(
-                "proj",
-                [{"idp_group": "member", "roles": ["member"]}],
-                user_type="ephemeral",
-            ),
-        ]
-        rules = _build_generated_rules(projects)
-
-        assert len(rules) == 1
-        assert rules[0]["local"][0]["user"]["type"] == "ephemeral"
-        assert "domain" not in rules[0]["local"][1]
+        if expect_type is not None:
+            assert rules[0]["local"][0]["user"]["type"] == expect_type
+        else:
+            assert "type" not in rules[0]["local"][0]["user"]
+        if expect_domain is not None:
+            assert rules[0]["local"][1]["domain"] == expect_domain
+        else:
+            assert "domain" not in rules[0]["local"][1]
 
     def test_custom_user_type_value(self) -> None:
         projects = [

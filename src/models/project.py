@@ -74,6 +74,54 @@ class ProjectConfig:
     released_router_ips: list[ReleasedRouterIpEntry] = dataclasses.field(default_factory=list)
 
     @classmethod
+    def build(cls, data: dict[str, Any] | None = None, /, **kwargs: Any) -> ProjectConfig:
+        """Construct a validated ``ProjectConfig`` from a dict and/or keyword args.
+
+        Merges *data* and *kwargs* (kwargs win), deep-copies to avoid mutating
+        caller data, auto-populates universally useful defaults (subnet
+        gateway/pools, domain_id, federation entry modes), validates, and
+        returns a frozen ``ProjectConfig``.
+
+        Raises :class:`~src.config_validator.ConfigValidationError` on
+        validation failure.
+        """
+        import copy
+
+        from src.config_resolver import auto_populate_subnet_defaults
+        from src.config_validator import ConfigValidationError
+
+        raw = copy.deepcopy({**(data or {}), **kwargs})
+
+        # Auto-populate domain_id
+        if raw.get("domain_id") is None and raw.get("domain") is None:
+            raw["domain_id"] = "default"
+        elif raw.get("domain_id") is None and raw.get("domain") is not None:
+            raw["domain_id"] = raw["domain"]
+
+        # Auto-populate subnet defaults (gateway_ip, allocation_pools from CIDR)
+        if raw.get("state", "present") != "absent":
+            auto_populate_subnet_defaults(raw)
+
+        # Resolve federation entry modes from federation-level default
+        fed = raw.get("federation")
+        if isinstance(fed, dict):
+            default_mode = fed.get("mode", "project")
+            for entry in fed.get("role_assignments", []):
+                if isinstance(entry, dict) and not entry.get("mode"):
+                    entry["mode"] = default_mode
+
+        # Validate and construct
+        name = raw.get("name")
+        label = name if isinstance(name, str) and name else "<build>"
+        errors: list[str] = []
+        result = cls.validate(raw, errors, label)
+        if errors:
+            raise ConfigValidationError(errors)
+        if result is None:
+            raise ConfigValidationError(["Failed to construct ProjectConfig"])
+        return result
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ProjectConfig:
         """Create from a pre-validated dict. Use ``validate()`` for untrusted input.
 

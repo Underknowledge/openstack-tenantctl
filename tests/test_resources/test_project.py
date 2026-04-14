@@ -392,76 +392,31 @@ class TestDisabledProjects:
 class TestProjectNameCharacters:
     """Project names can contain various valid characters."""
 
-    def test_project_name_with_spaces(
+    @pytest.mark.parametrize(
+        "name",
+        ["My Test Project", "my-test-project", "My_Test-Project 2024"],
+        ids=["spaces", "hyphens", "mixed"],
+    )
+    def test_project_name_with_special_characters(
         self,
         shared_ctx: SharedContext,
         sample_project_cfg: ProjectConfig,
+        name: str,
     ) -> None:
-        """Project name can contain spaces."""
-        cfg = dataclasses.replace(sample_project_cfg, name="My Test Project")
+        cfg = dataclasses.replace(sample_project_cfg, name=name)
         _stub_domain(shared_ctx.conn, "domain-uuid-default")
         shared_ctx.conn.identity.find_project.return_value = None
 
         created_project = MagicMock()
-        created_project.id = "proj-with-spaces-123"
+        created_project.id = "proj-123"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
         action, project_id = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.CREATED
-        assert project_id == "proj-with-spaces-123"
+        assert project_id == "proj-123"
         shared_ctx.conn.identity.create_project.assert_called_once_with(
-            name="My Test Project",
-            domain_id="domain-uuid-default",
-            description="Test project",
-            is_enabled=True,
-        )
-
-    def test_project_name_with_hyphens(
-        self,
-        shared_ctx: SharedContext,
-        sample_project_cfg: ProjectConfig,
-    ) -> None:
-        """Project name can contain hyphens."""
-        cfg = dataclasses.replace(sample_project_cfg, name="my-test-project")
-        _stub_domain(shared_ctx.conn, "domain-uuid-default")
-        shared_ctx.conn.identity.find_project.return_value = None
-
-        created_project = MagicMock()
-        created_project.id = "proj-with-hyphens-123"
-        shared_ctx.conn.identity.create_project.return_value = created_project
-
-        action, project_id = ensure_project(cfg, shared_ctx)
-
-        assert action.status == ActionStatus.CREATED
-        assert project_id == "proj-with-hyphens-123"
-        shared_ctx.conn.identity.create_project.assert_called_once_with(
-            name="my-test-project",
-            domain_id="domain-uuid-default",
-            description="Test project",
-            is_enabled=True,
-        )
-
-    def test_project_name_with_mixed_characters(
-        self,
-        shared_ctx: SharedContext,
-        sample_project_cfg: ProjectConfig,
-    ) -> None:
-        """Project name can contain spaces, hyphens, and underscores."""
-        cfg = dataclasses.replace(sample_project_cfg, name="My_Test-Project 2024")
-        _stub_domain(shared_ctx.conn, "domain-uuid-default")
-        shared_ctx.conn.identity.find_project.return_value = None
-
-        created_project = MagicMock()
-        created_project.id = "proj-mixed-123"
-        shared_ctx.conn.identity.create_project.return_value = created_project
-
-        action, project_id = ensure_project(cfg, shared_ctx)
-
-        assert action.status == ActionStatus.CREATED
-        assert project_id == "proj-mixed-123"
-        shared_ctx.conn.identity.create_project.assert_called_once_with(
-            name="My_Test-Project 2024",
+            name=name,
             domain_id="domain-uuid-default",
             description="Test project",
             is_enabled=True,
@@ -471,42 +426,27 @@ class TestProjectNameCharacters:
 class TestIsProjectDisabled:
     """Tests for is_project_disabled() — API fallback for locked->present detection."""
 
-    def test_returns_true_when_project_disabled(
+    @pytest.mark.parametrize(
+        ("is_enabled", "expected"),
+        [(False, True), (True, False), (None, False)],
+        ids=["disabled", "enabled", "not-found"],
+    )
+    def test_returns_expected(
         self,
         shared_ctx: SharedContext,
         sample_project_cfg: ProjectConfig,
+        is_enabled: bool | None,
+        expected: object,
     ) -> None:
-        """Project exists and is_enabled=False → True."""
         _stub_domain(shared_ctx.conn, "domain-uuid-default")
-        existing = MagicMock()
-        existing.is_enabled = False
-        shared_ctx.conn.identity.find_project.return_value = existing
+        if is_enabled is None:
+            shared_ctx.conn.identity.find_project.return_value = None
+        else:
+            existing = MagicMock()
+            existing.is_enabled = is_enabled
+            shared_ctx.conn.identity.find_project.return_value = existing
 
-        assert is_project_disabled(sample_project_cfg, shared_ctx) is True
-
-    def test_returns_false_when_project_enabled(
-        self,
-        shared_ctx: SharedContext,
-        sample_project_cfg: ProjectConfig,
-    ) -> None:
-        """Project exists and is_enabled=True → False."""
-        _stub_domain(shared_ctx.conn, "domain-uuid-default")
-        existing = MagicMock()
-        existing.is_enabled = True
-        shared_ctx.conn.identity.find_project.return_value = existing
-
-        assert is_project_disabled(sample_project_cfg, shared_ctx) is False
-
-    def test_returns_false_when_project_not_found(
-        self,
-        shared_ctx: SharedContext,
-        sample_project_cfg: ProjectConfig,
-    ) -> None:
-        """Project does not exist → False."""
-        _stub_domain(shared_ctx.conn, "domain-uuid-default")
-        shared_ctx.conn.identity.find_project.return_value = None
-
-        assert is_project_disabled(sample_project_cfg, shared_ctx) is False
+        assert is_project_disabled(sample_project_cfg, shared_ctx) is expected
 
     def test_returns_false_when_conn_is_none(
         self,
