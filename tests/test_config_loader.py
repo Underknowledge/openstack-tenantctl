@@ -1927,6 +1927,24 @@ class TestFederationEntryModeResolution:
         entry = merged_projects[0].federation.role_assignments[0]
         assert entry.mode == "project"
 
+    def test_static_mapping_files_round_trip(self, tmp_path: Path) -> None:
+        """static_mapping_files in defaults.yaml reaches DefaultsConfig."""
+        defaults: dict[str, Any] = {
+            "federation": {
+                "mapping_id": "m",
+                "static_mapping_files": ["federation_static.json", "extra/*.json"],
+            },
+        }
+        project = _minimum_valid_project()
+        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
+
+        _, loaded_defaults = load_all_projects(config_dir)
+
+        assert loaded_defaults.federation_static_mapping_files == (
+            "federation_static.json",
+            "extra/*.json",
+        )
+
     def test_defaults_yaml_mode_inherited(self, tmp_path: Path) -> None:
         """Federation mode from defaults.yaml propagates to entries."""
         defaults: dict[str, Any] = {

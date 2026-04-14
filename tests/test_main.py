@@ -15,6 +15,7 @@ import pytest
 from src.main import (
     _build_external_network_map,
     _load_and_filter_projects,
+    _load_static_mapping_files,
     _print_summary,
     _resolve_default_external_network,
     _resolve_federation_context,
@@ -285,7 +286,9 @@ class TestResolveFederationContext:
         static_data = [{"local": [{"user": {"name": "admin"}}], "remote": []}]
         static_path.write_text(json.dumps(static_data))
 
-        defaults = DefaultsConfig()
+        defaults = DefaultsConfig(
+            federation_static_mapping_files=("federation_static.json",),
+        )
         all_projects: list[ProjectConfig] = []
 
         _, _, static_rules = _resolve_federation_context(mock_conn, str(mock_config_dir), defaults, all_projects)
@@ -1097,3 +1100,68 @@ class TestResolveDefaultExternalNetworkEdgeCases:
         result = _resolve_default_external_network(net_map, defaults)
 
         assert result == "net-auto-123"
+
+
+class TestLoadStaticMappingFiles:
+    """Tests for _load_static_mapping_files helper."""
+
+    def test_literal_filename(self, tmp_path: Path) -> None:
+        """Literal filename pattern matches a single file."""
+        rules = [{"local": [{"user": {"name": "admin"}}], "remote": []}]
+        (tmp_path / "federation_static.json").write_text(json.dumps(rules))
+
+        result = _load_static_mapping_files(str(tmp_path), ("federation_static.json",))
+
+        assert result == rules
+
+    def test_wildcard_matches_multiple_sorted(self, tmp_path: Path) -> None:
+        """Wildcard *.json matches multiple files in sorted order."""
+        subdir = tmp_path / "static.d"
+        subdir.mkdir()
+        (subdir / "b.json").write_text(json.dumps([{"id": "b"}]))
+        (subdir / "a.json").write_text(json.dumps([{"id": "a"}]))
+
+        result = _load_static_mapping_files(str(tmp_path), ("static.d/*.json",))
+
+        assert result == [{"id": "a"}, {"id": "b"}]
+
+    def test_numbered_glob(self, tmp_path: Path) -> None:
+        """Glob [0-9]-*.json matches numbered files, ignores others."""
+        subdir = tmp_path / "d"
+        subdir.mkdir()
+        (subdir / "1-active.json").write_text(json.dumps([{"id": "1"}]))
+        (subdir / "2-active.json").write_text(json.dumps([{"id": "2"}]))
+        (subdir / "skip-me.json").write_text(json.dumps([{"id": "skip"}]))
+
+        result = _load_static_mapping_files(str(tmp_path), ("d/[0-9]-*.json",))
+
+        assert result == [{"id": "1"}, {"id": "2"}]
+
+    def test_no_matches_returns_empty_with_warning(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """No matches → empty list + warning logged."""
+        result = _load_static_mapping_files(str(tmp_path), ("nonexistent/*.json",))
+
+        assert result == []
+        assert "No files matched" in caplog.text
+
+    def test_multiple_patterns_concatenated(self, tmp_path: Path) -> None:
+        """Multiple patterns: results concatenated in pattern order."""
+        (tmp_path / "first.json").write_text(json.dumps([{"id": "first"}]))
+        (tmp_path / "second.json").write_text(json.dumps([{"id": "second"}]))
+
+        result = _load_static_mapping_files(str(tmp_path), ("second.json", "first.json"))
+
+        assert result == [{"id": "second"}, {"id": "first"}]
+
+    def test_empty_patterns_returns_empty(self, tmp_path: Path) -> None:
+        """Empty patterns tuple → empty list, no file I/O."""
+        result = _load_static_mapping_files(str(tmp_path), ())
+
+        assert result == []
+
+    def test_invalid_json_raises(self, tmp_path: Path) -> None:
+        """Invalid JSON in a matched file → json.JSONDecodeError propagates."""
+        (tmp_path / "bad.json").write_text("not valid json{{{")
+
+        with pytest.raises(json.JSONDecodeError):
+            _load_static_mapping_files(str(tmp_path), ("bad.json",))
