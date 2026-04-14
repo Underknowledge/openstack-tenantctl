@@ -35,9 +35,6 @@ OpenStack TenantCtl is a Python-based CLI tool that provisions and manages OpenS
 
 ### 1.3 Project Metrics
 
-- **Production Code**: 5,974 LOC across 29 modules
-- **Test Code**: 14,693 LOC across test suite
-- **Test-to-Code Ratio**: ~2.5:1 (comprehensive test coverage)
 - **Language**: Python 3.11+
 - **Primary Dependencies**:
   - `openstacksdk` 4.x - OpenStack API client
@@ -1138,8 +1135,6 @@ for cfg in projects:
 
 ### 7.1 Test Coverage
 
-- **Test code**: 5,925 LOC across comprehensive test suite
-- **Test-to-code ratio**: ~1.5:1 (comprehensive coverage)
 - **Test organization**: Module-aligned test files mirroring `src/` structure
 
 ### 7.2 Test Architecture

@@ -20,8 +20,9 @@ from datetime import UTC, datetime
 
 from src.models import ProjectConfig
 from src.resources.compute import shelve_all_servers, unshelve_all_servers
-from src.resources.federation import ensure_federation_mapping
+from src.resources.federation import augment_group_role_assignments, ensure_federation_mapping
 from src.resources.group_roles import ensure_group_role_assignments
+from src.resources.keystone_groups import ensure_keystone_groups
 from src.resources.network import ensure_network_stack, track_router_ips
 from src.resources.prealloc import ensure_preallocated_fips, ensure_preallocated_network
 from src.resources.project import (
@@ -41,6 +42,9 @@ from src.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PHASE_KEYSTONE_GROUPS = "__keystone_groups__"
+_PHASE_FEDERATION = "__federation__"
 
 # Type alias for state handler functions.
 StateHandler = Callable[[ProjectConfig, SharedContext], None]
@@ -114,7 +118,8 @@ def _reconcile_present(cfg: ProjectConfig, ctx: SharedContext) -> None:
 
     _persist_project_metadata(cfg, project_id, ctx)
 
-    ensure_group_role_assignments(cfg, project_id, ctx)
+    effective_cfg = augment_group_role_assignments(cfg)
+    ensure_group_role_assignments(effective_cfg, project_id, ctx)
     ensure_network_stack(cfg, project_id, ctx)
     track_router_ips(cfg, project_id, ctx)
     ensure_preallocated_fips(cfg, project_id, ctx)
@@ -204,10 +209,13 @@ def _reconcile_absent(cfg: ProjectConfig, ctx: SharedContext) -> None:
 
     # Revoke all group role assignments before deletion.
     # Mark all assignments as absent so they get revoked.
-    if cfg.group_role_assignments:
+    effective_cfg = augment_group_role_assignments(cfg)
+    if effective_cfg.group_role_assignments:
         revoke_cfg = dataclasses.replace(
-            cfg,
-            group_role_assignments=[dataclasses.replace(entry, state="absent") for entry in cfg.group_role_assignments],
+            effective_cfg,
+            group_role_assignments=[
+                dataclasses.replace(entry, state="absent") for entry in effective_cfg.group_role_assignments
+            ],
         )
         ensure_group_role_assignments(revoke_cfg, project_id, ctx)
 
@@ -260,6 +268,15 @@ def reconcile(
     Returns:
         List of all actions taken (same as ``ctx.actions``).
     """
+    # Create Keystone groups needed by group-mode federation before
+    # per-project reconciliation (groups must exist before role assignment).
+    ctx.current_project_name = _PHASE_KEYSTONE_GROUPS
+    try:
+        ensure_keystone_groups(all_projects, ctx)
+    except Exception as exc:
+        logger.exception("Failed to ensure Keystone groups: %s", exc)
+        ctx.failed_projects.append(_PHASE_KEYSTONE_GROUPS)
+
     for cfg in projects:
         project_name: str = cfg.name
         state: str = cfg.state
@@ -311,6 +328,6 @@ def reconcile(
             type(exc).__name__,
             exc,
         )
-        ctx.failed_projects.append("__federation__")
+        ctx.failed_projects.append(_PHASE_FEDERATION)
 
     return ctx.actions

@@ -295,6 +295,36 @@ class TestSkipConditions:
         assert actions[0].status == ActionStatus.SKIPPED
         assert actions[0].details == "no group_role_assignments configured"
 
+    def test_dry_run_missing_group_reports_pending(
+        self,
+        dry_run_ctx: SharedContext,
+    ) -> None:
+        """Dry-run with missing group reports pending creation instead of crashing."""
+        from src.models import ProjectConfig
+
+        cfg = ProjectConfig.from_dict(
+            {
+                "name": "test",
+                "resource_prefix": "test",
+                "group_role_assignments": [
+                    {"group": "pending-group", "roles": ["member", "admin"]},
+                ],
+            }
+        )
+        identity = dry_run_ctx.conn.identity
+        identity.find_group.return_value = None  # group doesn't exist yet
+
+        actions = ensure_group_role_assignments(cfg, "proj-123", dry_run_ctx)
+
+        assert len(actions) == 2
+        assert all(a.status == ActionStatus.CREATED for a in actions)
+        assert all("group pending creation" in a.details for a in actions)
+        assert any("would grant member to pending-group" in a.details for a in actions)
+        assert any("would grant admin to pending-group" in a.details for a in actions)
+        # No role lookups or writes attempted
+        identity.find_role.assert_not_called()
+        identity.assign_project_role_to_group.assert_not_called()
+
     def test_empty_roles_list(
         self,
         shared_ctx: SharedContext,

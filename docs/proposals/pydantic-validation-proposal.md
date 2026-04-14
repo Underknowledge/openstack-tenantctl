@@ -17,7 +17,7 @@
 
 ## Problem Statement
 
-At the time of evaluation, `_validate_project()` in `src/config_loader.py` (~220 lines)
+At the time of evaluation, `_validate_project()` in `src/config_loader.py`
 performed manual field-by-field validation using `isinstance()` checks, regex matches,
 and `ipaddress` parsing. This pattern was verbose and required updating both the function
 and tests whenever a new config field was added.
@@ -25,7 +25,7 @@ and tests whenever a new config field was added.
 **What exists now**: The monolithic `_validate_project()` was removed from
 `config_loader.py`. Validation now lives in two places:
 
-- `src/config_validator.py` (61 lines) — entry point that delegates to model validators
+- `src/config_validator.py` — entry point that delegates to model validators
   and performs cross-project checks (CIDR overlap detection)
 - `src/models/` package — frozen dataclass hierarchy where each model has a `validate()`
   classmethod that validates its own fields and accumulates errors into a shared
@@ -37,7 +37,7 @@ and tests whenever a new config field was added.
 
 ### Pydantic v2 Strengths
 
-- **Eliminates ~220 lines of manual validation** — type checks become implicit from annotations
+- **Eliminates manual validation complexity** — type checks become implicit from annotations
 - **Zero new dependency** — already installed in the venv as a transitive dep of `bump-my-version`
 - **Structured error messages** — `ValidationError.errors()` produces field paths (`network.subnet.cidr`) automatically
 - **Custom validators** — `@field_validator` / `@model_validator` handle domain-specific checks (CIDR format, gateway-inside-subnet, quota non-negativity) cleanly

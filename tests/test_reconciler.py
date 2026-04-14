@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from src.models import ProjectConfig
-from src.reconciler import reconcile
+from src.reconciler import _PHASE_KEYSTONE_GROUPS, reconcile
 from src.utils import Action, ActionStatus, SharedContext
 
 
@@ -101,6 +101,8 @@ def patched_resources():
         "src.reconciler.safety_check",
         "src.reconciler.teardown_project",
         "src.reconciler.is_project_disabled",
+        "src.reconciler.ensure_keystone_groups",
+        "src.reconciler.augment_group_role_assignments",
     ]
     with ExitStack() as stack:
         mocks = {t.rsplit(".", 1)[1]: stack.enter_context(patch(t)) for t in targets}
@@ -118,6 +120,8 @@ def patched_resources():
         mocks["safety_check"].return_value = []
         # Default: project is not disabled (steady-state present, no unshelve)
         mocks["is_project_disabled"].return_value = False
+        # Default: augment passes through the config unchanged
+        mocks["augment_group_role_assignments"].side_effect = lambda cfg: cfg
 
         yield SimpleNamespace(**mocks)
 
@@ -158,6 +162,7 @@ class TestPresentStatePipeline:
             resource_type="project",
             name="test",
         )
+        patched_resources.ensure_keystone_groups.side_effect = track("ensure_keystone_groups")
         patched_resources.ensure_project.side_effect = track(
             "ensure_project",
             (project_action, "proj-123"),
@@ -179,6 +184,7 @@ class TestPresentStatePipeline:
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
         assert call_order == [
+            "ensure_keystone_groups",
             "ensure_project",
             "ensure_group_role_assignments",
             "ensure_network_stack",
@@ -1106,3 +1112,65 @@ class TestLastReconciledStatePersistence:
         save_calls = shared_ctx.state_store.save.call_args_list
         state_calls = [c for c in save_calls if c[0][1] == ["metadata", "last_reconciled_state"]]
         assert len(state_calls) == 0
+
+
+class TestKeystoneGroupsInReconciler:
+    """Keystone group creation runs before per-project loop."""
+
+    def test_keystone_groups_failure_does_not_block_projects(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """ensure_keystone_groups failure recorded but per-project loop still runs."""
+        patched_resources.ensure_keystone_groups.side_effect = RuntimeError("group creation failed")
+
+        reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
+
+        assert _PHASE_KEYSTONE_GROUPS in shared_ctx.failed_projects
+        # Per-project reconciliation still happened
+        patched_resources.ensure_project.assert_called_once()
+        # Federation mapping still runs
+        patched_resources.ensure_federation_mapping.assert_called_once()
+
+    def test_keystone_groups_called_with_all_projects(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        _make_project_cfg,
+    ) -> None:
+        """ensure_keystone_groups receives all_projects, not filtered projects."""
+        cfg1 = _make_project_cfg("p1")
+        cfg2 = _make_project_cfg("p2")
+        all_projects = [cfg1, cfg2]
+
+        reconcile(projects=[cfg1], all_projects=all_projects, ctx=shared_ctx)
+
+        patched_resources.ensure_keystone_groups.assert_called_once_with(all_projects, shared_ctx)
+
+    def test_augment_called_in_present_state(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """augment_group_role_assignments is called for present-state projects."""
+        reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
+
+        patched_resources.augment_group_role_assignments.assert_called_once_with(sample_project_cfg)
+
+    def test_augment_called_in_absent_state(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        _make_project_cfg,
+    ) -> None:
+        """augment_group_role_assignments is called for absent-state projects."""
+        cfg = _make_project_cfg("doomed", state="absent")
+        patched_resources.find_existing_project.return_value = ("proj-id", "default")
+        patched_resources.safety_check.return_value = []
+
+        reconcile([cfg], [cfg], shared_ctx)
+
+        patched_resources.augment_group_role_assignments.assert_called_once_with(cfg)

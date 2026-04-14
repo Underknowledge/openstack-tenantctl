@@ -1747,7 +1747,7 @@ def _expand_security_group_rules(project: dict[str, Any], errors: list[str]):
 
 ### Rationale
 
-**Reduces verbosity**: `"SSH"` (7 characters) vs. full rule (7 lines, ~150 characters).
+**Reduces verbosity**: `"SSH"` (7 characters) vs. full rule definition.
 
 **Maintains flexibility**: The override mechanism lets us customize presets without losing brevity.
 
@@ -1976,7 +1976,7 @@ The `state_store` is created in `main()` and threaded through to `load_all_proje
 
 **Non-breaking migration**: Existing state keys in project YAML are auto-migrated to state files on first run. All reads via `cfg.get("preallocated_fips", [])` work unchanged because we merge state into the in-memory config dict during loading. This means existing deployments upgrade transparently.
 
-**Eliminated `config_writer.py`**: We deleted the entire config writeback module (61 lines). All writes now go through `StateStore.save()`, which has the same read-modify-write semantics but targets the state file instead of the project YAML.
+**Eliminated `config_writer.py`**: We deleted the entire config writeback module. All writes now go through `StateStore.save()`, which has the same read-modify-write semantics but targets the state file instead of the project YAML.
 
 **Metadata enrichment**: Persisting `project_id`, `domain_id`, and `last_reconciled_at` in the state file gives us operational visibility without polluting config files. We can answer "when was this project last reconciled?" and "what's the OpenStack project ID?" by reading the state file.
 
