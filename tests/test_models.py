@@ -9,6 +9,7 @@ import pytest
 
 from src.models import (
     AllocationPool,
+    DefaultsConfig,
     FederationConfig,
     FederationRoleAssignment,
     FipEntry,
@@ -1687,3 +1688,52 @@ class TestReleasedRouterIpEntryFromDict:
         assert entry.router_name == "test-router"
         assert entry.released_at == "2025-01-01"
         assert entry.reason == "deleted"
+
+
+# ---------------------------------------------------------------------------
+# DefaultsConfig
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultsConfig:
+    """DefaultsConfig.from_dict() extraction of federation_static_mapping_files."""
+
+    def test_empty_when_federation_absent(self) -> None:
+        """No federation section → empty tuple."""
+        cfg = DefaultsConfig.from_dict({})
+        assert cfg.federation_static_mapping_files == ()
+
+    def test_extracts_list(self) -> None:
+        """federation.static_mapping_files list → tuple."""
+        data: dict[str, Any] = {
+            "federation": {
+                "static_mapping_files": ["a.json", "b/*.json"],
+            },
+        }
+        cfg = DefaultsConfig.from_dict(data)
+        assert cfg.federation_static_mapping_files == ("a.json", "b/*.json")
+
+    def test_empty_list(self) -> None:
+        """federation.static_mapping_files: [] → empty tuple."""
+        data: dict[str, Any] = {
+            "federation": {"static_mapping_files": []},
+        }
+        cfg = DefaultsConfig.from_dict(data)
+        assert cfg.federation_static_mapping_files == ()
+
+    def test_single_string(self) -> None:
+        """YAML scalar string → wrapped in tuple."""
+        data: dict[str, Any] = {
+            "federation": {"static_mapping_files": "single.json"},
+        }
+        cfg = DefaultsConfig.from_dict(data)
+        assert cfg.federation_static_mapping_files == ("single.json",)
+
+    def test_absent_key_with_other_federation_keys(self) -> None:
+        """Other federation keys present but no static_mapping_files → empty tuple."""
+        data: dict[str, Any] = {
+            "federation": {"mapping_id": "my-mapping"},
+        }
+        cfg = DefaultsConfig.from_dict(data)
+        assert cfg.federation_static_mapping_files == ()
+        assert cfg.federation_mapping_id == "my-mapping"

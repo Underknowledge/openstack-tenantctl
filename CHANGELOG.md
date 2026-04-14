@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configurable static federation mapping files: `federation.static_mapping_files` in `defaults.yaml` accepts glob patterns (e.g., `federation_static.d/*.json`) resolved relative to the config directory, replacing the previously hardcoded `federation_static.json` path
+
+### Documentation
+- Readme pip installation instructions
+
 ## [0.3.0] - 2026-04-14
 
 ### Added

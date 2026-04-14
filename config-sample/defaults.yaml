@@ -135,6 +135,13 @@ federation:
   # Example with dash:  project "my project" + idp_group "member" → "my project-member"
   # group_name_separator: " "
 
+  # static_mapping_files:
+  # Glob patterns (relative to config dir) for static federation mapping rules.
+  # Matched files are loaded in sorted order and placed BEFORE generated
+  # per-project rules.  Set to [] or omit to load no static rules.
+  static_mapping_files:
+    - "federation_static.json"
+
   role_assignments:
     - idp_group: member
       roles:

@@ -161,6 +161,35 @@ def _resolve_default_external_network(
     return ""
 
 
+def _load_static_mapping_files(
+    config_dir: str,
+    patterns: tuple[str, ...],
+) -> list:
+    """Load and concatenate static federation mapping rules from glob patterns.
+
+    Each pattern is resolved relative to *config_dir* via ``Path.glob()``.
+    Matched files are sorted for deterministic ordering and their JSON
+    contents are concatenated into a single list.
+
+    Returns an empty list when *patterns* is empty.
+    """
+    if not patterns:
+        return []
+
+    all_rules: list = []
+    base = Path(config_dir)
+    for pattern in patterns:
+        matched = sorted(base.glob(pattern))
+        if not matched:
+            logger.warning("No files matched static mapping pattern '%s'", pattern)
+            continue
+        for path in matched:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            all_rules.extend(data)
+            logger.info("Loaded static mapping rules from %s", path)
+    return all_rules
+
+
 def _resolve_federation_context(
     conn: openstack.connection.Connection,
     config_dir: str,
@@ -198,9 +227,7 @@ def _resolve_federation_context(
                 mapping_id,
             )
 
-    static_path = Path(config_dir, "federation_static.json")
-    static_rules = json.loads(static_path.read_text(encoding="utf-8"))
-    logger.info("Loaded static mapping rules from %s", static_path)
+    static_rules = _load_static_mapping_files(config_dir, defaults.federation_static_mapping_files)
 
     return current_rules, mapping_exists, static_rules
 
