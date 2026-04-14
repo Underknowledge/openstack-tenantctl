@@ -118,15 +118,37 @@ The core provisioning engine is tested against OpenStack deployments. The config
 
 ---
 
+## Installation
+
+### Option 1: Install from Git (Recommended for users)
+
+Install directly from GitHub without cloning:
+
+```bash
+# Install from main branch (latest)
+pip install git+https://github.com/Underknowledge/openstack-tenantctl.git
+
+# Install specific version tag
+pip install git+https://github.com/Underknowledge/openstack-tenantctl.git@v0.3.0
+```
+
+After installation, the `tenantctl` command is available system-wide.
+
+### Option 2: Local development installation
+
+For contributing or local modifications:
+
+```bash
+git clone https://github.com/Underknowledge/openstack-tenantctl.git
+cd openstack-tenantctl
+make install  # Creates .venv and installs in editable mode
+```
+
+---
+
 ## Quick Start
 
 ```bash
-# Clone and install
-git clone https://github.com/Underknowledge/openstack-tenantctl.git
-cd openstack-tenantctl
-# you need python >3.11 e.g. nix-shell -p python312 ; sudo dnf install python3.12 ; 
-make install
-
 # Set OpenStack credentials (option A: environment variables)
 export OS_AUTH_URL=https://openstack.example.com:5000/v3
 export OS_PROJECT_NAME=admin
@@ -139,13 +161,13 @@ export OS_PROJECT_DOMAIN_NAME=Default
 # tenantctl --os-cloud mycloud -v
 
 # Preview changes (live cloud reads, field-level diffs)
-.venv/bin/tenantctl --dry-run -v
+tenantctl --dry-run -v
 
 # Preview changes (offline, no cloud connection)
-.venv/bin/tenantctl --dry-run --offline -v
+tenantctl --dry-run --offline -v
 
 # Provision
-.venv/bin/tenantctl -v
+tenantctl -v
 ```
 
 ---
