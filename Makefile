@@ -27,11 +27,12 @@ test:
 # Version management
 .PHONY: bump-patch bump-minor bump-major bump-dry-run bump-revert reinstall version
 
-bump-patch: fmt lint test reinstall
+bump-patch: fmt lint test
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "Bumping patch version (bug fixes, no API changes)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	$(VENV)/bin/bump-my-version bump patch
+	@$(MAKE) reinstall
 	@echo ""
 	@echo "Version bumped to: $$($(PYTHON) -c 'from src import __version__; print(__version__)')"
 	@echo ""
@@ -47,11 +48,12 @@ bump-patch: fmt lint test reinstall
 	@echo "     git push && git push --tags"
 	@echo ""
 
-bump-minor: fmt lint test reinstall
+bump-minor: fmt lint test
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "Bumping minor version (new features, backward compatible)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	$(VENV)/bin/bump-my-version bump minor
+	@$(MAKE) reinstall
 	@echo ""
 	@echo "Version bumped to: $$($(PYTHON) -c 'from src import __version__; print(__version__)')"
 	@echo ""
@@ -67,11 +69,12 @@ bump-minor: fmt lint test reinstall
 	@echo "     git push && git push --tags"
 	@echo ""
 
-bump-major: fmt lint test reinstall
+bump-major: fmt lint test
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "Bumping major version (breaking changes)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	$(VENV)/bin/bump-my-version bump major
+	@$(MAKE) reinstall
 	@echo ""
 	@echo "Version bumped to: $$($(PYTHON) -c 'from src import __version__; print(__version__)')"
 	@echo ""
