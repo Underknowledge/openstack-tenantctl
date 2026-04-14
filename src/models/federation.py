@@ -13,6 +13,7 @@ class FederationRoleAssignment:
     idp_group: str | list[str]
     roles: list[str]
     keystone_group: str = ""
+    mode: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FederationRoleAssignment:
@@ -21,6 +22,7 @@ class FederationRoleAssignment:
             idp_group=data["idp_group"],
             roles=data["roles"],
             keystone_group=data.get("keystone_group", ""),
+            mode=data.get("mode", ""),
         )
 
     @classmethod
@@ -46,14 +48,18 @@ class FederationRoleAssignment:
         if not isinstance(keystone_group, str):
             errors.append(f"{label}.keystone_group must be a string, got {keystone_group!r}")
             keystone_group = ""
+        mode = data.get("mode", "")
+        if mode and mode not in _VALID_MODES:
+            errors.append(f"{label}.mode must be one of {sorted(_VALID_MODES)} or empty, got {mode!r}")
         return cls(
             idp_group=idp_group if idp_group is not None else "",
             roles=roles if isinstance(roles, list) else [],
             keystone_group=keystone_group,
+            mode=mode if isinstance(mode, str) else "",
         )
 
 
-_VALID_MAPPING_MODES: set[str] = {"project", "group"}
+_VALID_MODES: set[str] = {"project", "group"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -64,7 +70,7 @@ class FederationConfig:
     mapping_id: str = ""
     group_prefix: str = "/services/openstack/"
     user_type: str = ""
-    mapping_mode: str = "project"
+    mode: str = "project"
     group_name_separator: str = " "
     role_assignments: list[FederationRoleAssignment] = dataclasses.field(default_factory=list)
 
@@ -76,7 +82,7 @@ class FederationConfig:
             mapping_id=data.get("mapping_id", ""),
             group_prefix=data.get("group_prefix", "/services/openstack/"),
             user_type=data.get("user_type", ""),
-            mapping_mode=data.get("mapping_mode", "project"),
+            mode=data.get("mode", "project"),
             group_name_separator=data.get("group_name_separator", " "),
             role_assignments=[FederationRoleAssignment.from_dict(a) for a in data.get("role_assignments", [])],
         )
@@ -84,12 +90,9 @@ class FederationConfig:
     @classmethod
     def validate(cls, data: dict[str, Any], errors: list[str], label: str) -> FederationConfig:
         """Validate *data* and return a ``FederationConfig`` (always constructible)."""
-        mapping_mode = data.get("mapping_mode", "project")
-        if mapping_mode not in _VALID_MAPPING_MODES:
-            errors.append(
-                f"{label}: federation.mapping_mode must be one of "
-                f"{sorted(_VALID_MAPPING_MODES)}, got {mapping_mode!r}"
-            )
+        mode = data.get("mode", "project")
+        if mode not in _VALID_MODES:
+            errors.append(f"{label}: federation.mode must be one of " f"{sorted(_VALID_MODES)}, got {mode!r}")
 
         assignments_data = data.get("role_assignments")
         validated_assignments: list[FederationRoleAssignment] = []
@@ -105,7 +108,7 @@ class FederationConfig:
             mapping_id=data.get("mapping_id", ""),
             group_prefix=data.get("group_prefix", "/services/openstack/"),
             user_type=data.get("user_type", ""),
-            mapping_mode=mapping_mode if isinstance(mapping_mode, str) else "project",
+            mode=mode if isinstance(mode, str) else "project",
             group_name_separator=data.get("group_name_separator", " "),
             role_assignments=validated_assignments,
         )

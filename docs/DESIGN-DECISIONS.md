@@ -44,6 +44,7 @@ Each decision includes:
 - [DD-017: Hardcoded Federation Defaults as Last-Resort Fallbacks](#dd-017-hardcoded-federation-defaults-as-last-resort-fallbacks)
 - [DD-018: Separate State File for Observed State](#dd-018-separate-state-file-for-observed-state)
 - [DD-022: File-Locking for State Store Concurrency](#dd-022-file-locking-for-state-store-concurrency)
+- [DD-024: Per-Entry Federation Mode](#dd-024-per-entry-federation-mode)
 
 ### Archived/Rejected
 - [DD-002: Allocate-Then-Lock Pattern (REJECTED)](#dd-002-allocate-then-lock-pattern-for-locked-resources)
@@ -354,7 +355,7 @@ def ensure_<resource>(cfg, ctx, ...) -> Action:
 
 **Alternative 1: Declarative resource framework**
 - Create a framework/DSL for resource definitions
-- **Rejected**: Over-engineering for our 6 resource types; framework complexity not justified
+- **Rejected**: Over-engineering for our current resource types; framework complexity not justified
 
 **Alternative 2: Per-resource custom logic**
 - Each resource module implements its own flow
@@ -609,7 +610,7 @@ We record, log, and report failed projects, but other projects still attempt to 
 - Failed projects still leave partial state in OpenStack
 
 **Mitigations**:
-- Clear output: "11 created, 0 updated, 4 skipped, 2 failed"
+- Clear output: "N created, N updated, N skipped, N failed"
 - Exit code 1 if any failures (CI/CD detects partial failure)
 - We list failed projects by name for easy identification
 
@@ -2178,7 +2179,7 @@ def ensure_X(cfg, project_id, ctx):
     # ... normal logic ...
 ```
 
-**Regression test**: A single parametrized test (`tests/test_opt_in_guards.py`) covers all 6 resource functions. Each entry specifies the function, the config key to delete, and the expected SKIPPED resource type. Adding a new resource function requires adding one row to the parametrize table.
+**Regression test**: A single parametrized test (`tests/test_opt_in_guards.py`) covers all resource functions. Each entry specifies the function, the config key to delete, and the expected SKIPPED resource type. Adding a new resource function requires adding one row to the parametrize table.
 
 ### Rationale
 
@@ -2332,7 +2333,7 @@ with FileLock(lock_path, timeout=30):
 - State operations are fast (<100ms), exclusive-only is acceptable
 
 **Why 30-second timeout?**:
-- Average reconciliation: ~7s for 25 projects, single project << 1s
+- Reconciliation completes quickly, single project << 1s
 - 30s allows plenty of headroom for slow operations
 - Timeout = genuine contention → fail fast is correct behavior
 
@@ -2509,6 +2510,95 @@ Support human-readable unit strings for RAM and storage quota fields while maint
 
 ---
 
+## DD-024: Group-Based Federation Mapping Mode
+
+**Status**: Accepted
+
+### Context
+
+The original federation implementation (`mode: "project"`) generates Keystone mapping rules with `{"projects": [...]}`, giving federated users direct project-role assignments. This works for single-project access but doesn't support multi-project team patterns where the same IDP group should grant roles across several projects.
+
+Keystone natively supports group-based federation: mapping rules place users into Keystone groups, and those groups are granted roles on projects. A single group can span multiple projects, making it the natural primitive for team-based access patterns.
+
+We needed a second mapping strategy alongside the existing project-based one, with the full lifecycle automated: group creation, role assignment, and mapping rule generation.
+
+### Decision
+
+**1. Two mapping modes: `"project"` and `"group"`**
+
+- **`"project"`** (original): mapping rules use `{"projects": [...]}` for direct project-role assignment
+- **`"group"`** (new): mapping rules use `{"group": {"name": ..., "domain": ...}}` for Keystone group placement
+
+In group mode, tenantctl automatically:
+1. Creates Keystone groups (derived from project name + IDP group)
+2. Assigns roles to those groups on the project
+3. Generates mapping rules that place IDP users into the Keystone groups
+
+**2. Per-entry mode with inheritance**
+
+Each `role_assignment` entry can specify its own `mode`, enabling mixed strategies in a single project. Mode resolves via three-level inheritance:
+
+- Entry `mode` > `federation.mode` > hardcoded default (`"project"`)
+
+Resolution happens at config load time via `_resolve_federation_entry_modes()`, consistent with the expansion-before-validation pattern (DD-003, DD-016). By the time resource modules execute, every entry already has an explicit `mode`.
+
+**3. Auto-derived Keystone group names**
+
+- Default pattern: `{project_name}{separator}{idp_group_short_name}`
+- Configurable separator via `group_name_separator` (defaults to `-`)
+- Manual override via `keystone_group` field on individual entries
+- Absolute IDP group paths (`/full/path/group`) use only the final segment for the group name
+
+**4. Keystone group lifecycle managed by tenantctl**
+
+`ensure_keystone_groups()` runs before per-project reconciliation because groups must exist before any project can assign roles to them. The function deduplicates across projects (same group name created only once), is idempotent (existing groups are skipped), and domain-aware (groups are created in the project's domain).
+
+**5. Group role assignments via augmentation**
+
+`augment_group_role_assignments()` converts group-mode federation entries into `GroupRoleAssignment` entries, which are then processed by the existing `ensure_group_role_assignments()` machinery. This reuses the existing role-assignment code path rather than duplicating it.
+
+### Rationale
+
+**Reuses Keystone primitives**: Groups and group-role-assignments are native Keystone concepts. Building on them means tenantctl works with Keystone rather than around it.
+
+**Config-load-time mode resolution**: Follows the established expansion-before-validation pattern (DD-003 deep-merge, DD-016 SG preset expansion). Resource modules receive fully-expanded configs with no runtime inheritance logic.
+
+**Per-entry granularity**: Real-world projects need mixed strategies (most users via groups for multi-project access, but specific admin entries assigned directly to the project).
+
+**Augmentation pattern**: Converting group-mode entries to `GroupRoleAssignment` reuses existing role-assignment machinery rather than building a parallel code path.
+
+**Pre-reconciliation group creation**: Groups must exist before any project can assign roles to them. Running `ensure_keystone_groups()` as a pre-reconciliation step guarantees this ordering.
+
+### Alternatives Considered
+
+**Alternative 1: Separate mapping per mode**: create two Keystone mappings, one for project mode and one for group mode.
+- **Rejected**: Not how OpenStack works. There is one mapping per IDP, and both modes coexist as rules within it.
+
+**Alternative 2: Global-only mode (no per-entry)**: a single mode toggle at the federation or project level.
+- **Rejected**: Doesn't support mixed strategies within a project, which is the core use case.
+
+**Alternative 3: User-managed Keystone groups**: require operators to pre-create groups and reference them by name.
+- **Rejected**: Adds manual steps that the tool should automate. The whole point of tenantctl is end-to-end lifecycle management.
+
+**Alternative 4: Runtime mode resolution**: resolve inheritance in resource modules instead of the config loader.
+- **Rejected**: Every resource module (`_build_generated_rules`, `augment_group_role_assignments`, `ensure_keystone_groups`) would need inheritance logic. Violates the config-load-time expansion pattern (DD-003, DD-016).
+
+### Consequences
+
+**Positive**:
+- Multi-project team access via single IDP group membership
+- Mixed strategies per project (group and project modes coexist)
+- Fully automated group lifecycle: creation, role assignment, and mapping rule generation
+- Resource modules stay simple; they read `assignment.mode` directly, no inheritance logic
+
+**Negative**:
+- Additional config-loader step (`_resolve_federation_entry_modes()`) to populate modes before validation
+- Tests must set `mode` on each entry in test fixtures (simulating the config loader)
+
+**See Also**: DD-003 (Deep-Merge Configuration), DD-008 (Federation as Shared Resource), DD-010 (Deterministic Rule Ordering), DD-016 (Security Group Rule Presets)
+
+---
+
 ## Summary Table
 
 | ID | Decision | Impact | Related |
@@ -2536,6 +2626,7 @@ Support human-readable unit strings for RAM and storage quota fields while maint
 | DD-021 | Opt-In CIDR Overlap Enforcement | Low - Behavior toggle | DD-019 |
 | DD-022 | File-Locking for State Store Concurrency | Medium - Data safety | DD-018 |
 | DD-023 | Human-Readable Quota Units | Low - User experience | - |
+| DD-024 | Group-Based Federation Mapping Mode | Medium - Federation flexibility | DD-003, DD-008, DD-010, DD-016 |
 
 ---
 

@@ -16,7 +16,7 @@ IaaS by automating project creation, network setup, quota configuration, and fed
 | **[USER-GUIDE.md](USER-GUIDE.md)** | Practical operational guide | Operators, SREs |
 | **[CONFIG-SCHEMA.md](CONFIG-SCHEMA.md)** | Complete configuration reference | All users |
 | **[SPECIFICATION.md](SPECIFICATION.md)** | Technical architecture specification | Developers, Architects |
-| **[DESIGN-DECISIONS.md](DESIGN-DECISIONS.md)** | Architecture decision records (20 ADRs) | Architects, Developers |
+| **[DESIGN-DECISIONS.md](DESIGN-DECISIONS.md)** | Architecture decision records | Architects, Developers |
 | **[API-REFERENCE.md](API-REFERENCE.md)** | Developer API documentation | Developers, Contributors |
 | **[Library Usage](#library-usage)** | Programmatic usage and ConfigSource protocol | Developers |
 
@@ -349,7 +349,7 @@ tenantctl --project production -v
 tenantctl -v
 
 # Expected output when everything matches:
-# 0 created, 0 updated, 42 skipped, 0 failed
+# 0 created, 0 updated, N skipped, 0 failed
 ```
 
 ### Preview Federation Mapping
@@ -414,18 +414,21 @@ federation:
   mapping_id: "my-mapping"
   group_prefix: "/services/openstack/"
   user_type: "ephemeral"  # Optional: adds "type" to user element in mapping rules
-  mapping_mode: "group"   # "project" (default) or "group" (multi-project support)
+  mode: "group"           # Default mode for entries — "project" (default) or "group"
   role_assignments:
     - idp_group: member
       roles: [member, load-balancer_member]
+      # inherits mode: "group" from federation-level default
     - idp_group: admin
       roles: [admin]
+      mode: "project"     # per-entry override
 ```
 
-- **Two mapping modes**: `"project"` (default, original) uses `{"projects": [...]}` rules; `"group"` uses `{"group": {...}}` rules — recommended when users need access to multiple projects simultaneously (Keystone accumulates group assignments across rules)
+- **Per-entry mode**: each `role_assignment` entry can use `"project"` or `"group"` mode independently; set a default at the federation level with `mode`
+- `"project"` mode (default) uses `{"projects": [...]}` rules; `"group"` uses `{"group": {...}}` rules — recommended when users need access to multiple projects simultaneously (Keystone accumulates group assignments across rules)
 - In group mode, tenantctl automatically creates Keystone groups and wires role assignments
 - Rules are ordered deterministically for stable diffs
-- Per-project overrides for `group_prefix`, `role_assignments`, `issuer`, `user_type`, and `mapping_mode`
+- Per-project overrides for `group_prefix`, `role_assignments`, `issuer`, `user_type`, and `mode`
 - Domain-aware: when `domain` is set on a project, rules include `"domain": {"name": "..."}` in the projects element
 - `user_type` support: when set (e.g., `"ephemeral"`), rules include `"type"` on the user element — required for cross-domain federated authentication
 - Static rules from `federation_static.json` merged into the mapping
@@ -469,7 +472,7 @@ Key sections:
 You want to evaluate the design or understand trade-offs.
 
 1. **[SPECIFICATION.md § Executive Summary](SPECIFICATION.md#1-executive-summary)** — High-level overview
-2. **[DESIGN-DECISIONS.md](DESIGN-DECISIONS.md)** — All 20 ADRs with context, rationale, and trade-offs
+2. **[DESIGN-DECISIONS.md](DESIGN-DECISIONS.md)** — ADRs with context, rationale, and trade-offs
 3. **[SPECIFICATION.md § Architecture](SPECIFICATION.md#2-architecture)** — Detailed architecture
 
 Key sections:
@@ -575,7 +578,7 @@ The `ConfigSource` protocol requires only two methods — `load_defaults()` and 
 | **Language** | Python 3.11+ |
 | **Dependencies** | openstacksdk 4.x, pyyaml, deepmerge, tenacity |
 | **Dev Dependencies** | ruff, mypy, pytest, pytest-mock |
-| **Design Decisions** | 20 ADRs documented |
+| **Design Decisions** | ADRs documented |
 
 ---
 
@@ -589,9 +592,9 @@ make test          # Run pytest suite
 
 # Version management
 make version       # Show current version
-make bump-patch    # 0.2.8 → 0.2.9
-make bump-minor    # 0.2.8 → 0.3.0
-make bump-major    # 0.2.8 → 1.0.0
+make bump-patch    # x.y.z → x.y.(z+1)
+make bump-minor    # x.y.z → x.(y+1).0
+make bump-major    # x.y.z → (x+1).0.0
 make bump-dry-run  # Preview version bump
 make bump-revert   # Undo last version bump
 ```

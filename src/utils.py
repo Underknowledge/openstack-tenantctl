@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 if TYPE_CHECKING:
+    from openstack.identity.v3._proxy import Proxy as IdentityV3Proxy
     from openstack.network.v2.network import Network
 
     from src.models import ProjectConfig
@@ -177,6 +178,15 @@ def retry(max_attempts: int = 5, backoff_base: float = 2.0) -> Callable[[Callabl
         before_sleep=_make_before_sleep(max_attempts),
         reraise=True,
     )
+
+
+def identity_v3(conn: openstack.connection.Connection) -> IdentityV3Proxy:
+    """Return the Keystone v3 identity proxy.
+
+    OpenStack SDK types ``conn.identity`` as ``v2.Proxy | v3.Proxy``.
+    This project targets Keystone v3 exclusively (v2 was removed in 2020).
+    """
+    return conn.identity  # type: ignore[return-value,no-any-return]
 
 
 @retry()

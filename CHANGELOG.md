@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-14
+
 ### Added
 - Domain-aware federation mapping rules: when `domain` is set on a project, generated rules include `"domain": {"name": "<domain>"}` in the projects element
 - `federation.user_type` field: when set (e.g., `"ephemeral"`), the user element in generated mapping rules includes `"type": "<user_type>"`
-- Group-based federation mapping mode (`mapping_mode: "group"`): generates `{"group": {...}}` rules instead of `{"projects": [...]}` rules, enabling multi-project access for federated users (Keystone accumulates group assignments across rules, unlike project assignments)
-- New federation fields: `mapping_mode`, `group_domain`, `group_name_separator`, and per-assignment `keystone_group` override
+- Per-entry federation mode (`mode: "project"` or `"group"` on each role assignment): entries can independently generate `{"projects": [...]}` or `{"group": {...}}` rules, enabling mixed strategies within a single project; federation-level `mode` sets the default, each entry can override
+- New federation fields: `federation.mode` (default for entries), `role_assignments[].mode` (per-entry override), `group_name_separator`, and per-assignment `keystone_group` override
 - Automatic Keystone group lifecycle: tenantctl creates groups referenced by group-mode federation before per-project reconciliation
 - Auto-derived `group_role_assignments` in group mode: role assignments from federation config are wired to Keystone groups automatically
+
+### Fixed
+- Resolve mypy `union-attr` errors: add `identity_v3()` typed helper to cast `conn.identity` to the v3 proxy (v2 was removed from OpenStack in 2020)
 
 ### Changed
 - Type pipeline-level defaults dict with `DefaultsConfig` frozen dataclass

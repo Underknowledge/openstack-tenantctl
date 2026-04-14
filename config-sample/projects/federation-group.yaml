@@ -1,11 +1,11 @@
-# Group-mode federation example.
+# Per-entry mode federation example.
 #
-# Uses mapping_mode: "group" so federation mapping rules place IDP users into
-# Keystone groups instead of assigning projects directly.  This solves the
-# "last-rule-wins" limitation: group assignments accumulate across rules,
-# letting users access multiple projects simultaneously.
+# Demonstrates mixed modes: some entries use "project" mode (direct project
+# assignment in mapping rules), others use "group" mode (Keystone group
+# assignment).  The federation-level "mode" sets the default; each entry
+# can override it.
 #
-# tenantctl automatically:
+# In group mode, tenantctl automatically:
 #   1. Creates Keystone groups named "{project_name}{separator}{idp_group}"
 #   2. Assigns the listed roles to those groups on this project
 #   3. Generates mapping rules that place IDP users into the groups
@@ -15,19 +15,15 @@
 
 name: federation-group-demo
 resource_prefix: fedgrp
-description: "Group-mode federation example"
+description: "Per-entry mode federation example"
 
 network:
   subnet:
     cidr: 192.168.40.0/24
 
 federation:
-  # Switch this project to group-mode federation.
-  mapping_mode: "group"
-  # Separator between project name and IDP group in auto-derived group names.
-  # With "-": federation-group-demo + member → "federation-group-demo-member"
-  # Default (space): federation-group-demo + member → "federation-group-demo member"
-  group_name_separator: "-"
+  # Default mode for entries that don't specify their own.
+  mode: "group"
   # Required for cross-domain federated authentication.
   user_type: "ephemeral"
 
@@ -36,11 +32,16 @@ federation:
       roles:
         - member
         - load-balancer_member
-      # Auto-derived group name: "federation-group-demo-member"
-      # (project name + separator + idp_group)
+      # Inherits mode: "group" from the federation-level default.
+      # Auto-derived group name: "federation-group-demo member"
     - idp_group: reader
       roles:
         - reader
       # Override the auto-derived name with a shared group.
       # Multiple projects can point to the same Keystone group.
       keystone_group: "shared-readers"
+    - idp_group: operator
+      roles:
+        - admin
+      # Override mode for this entry only: direct project assignment.
+      mode: "project"

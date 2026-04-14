@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from src.models.federation import FederationRoleAssignment
 
 from src.models import GroupRoleAssignment, ProjectConfig, ProjectState
-from src.utils import Action, ActionStatus, SharedContext, retry
+from src.utils import Action, ActionStatus, SharedContext, identity_v3, retry
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
             if user_type:
                 user_element["type"] = user_type
 
-            if federation_cfg.mapping_mode == "group":
+            if assignment.mode == "group":
                 ks_group_name = _derive_group_name(project_name, assignment, federation_cfg.group_name_separator)
                 group_element: dict[str, Any] = {
                     "group": {
@@ -166,9 +166,9 @@ def _push_mapping(
 ) -> None:
     """Create or update the federation mapping in Keystone."""
     if create:
-        conn.identity.create_mapping(id=mapping_id, rules=combined_rules)
+        identity_v3(conn).create_mapping(id=mapping_id, rules=combined_rules)
     else:
-        conn.identity.update_mapping(mapping_id, rules=combined_rules)
+        identity_v3(conn).update_mapping(mapping_id, rules=combined_rules)
 
 
 def ensure_federation_mapping(
@@ -268,10 +268,12 @@ def augment_group_role_assignments(cfg: ProjectConfig) -> ProjectConfig:
     appends ``GroupRoleAssignment`` entries for those derived groups so the
     existing ``ensure_group_role_assignments`` machinery wires up the roles.
     """
-    if not cfg.federation or cfg.federation.mapping_mode != "group":
+    if not cfg.federation:
         return cfg
     derived: list[GroupRoleAssignment] = []
     for assignment in cfg.federation.role_assignments:
+        if assignment.mode != "group":
+            continue
         ks_group = _derive_group_name(cfg.name, assignment, cfg.federation.group_name_separator)
         derived.append(GroupRoleAssignment(group=ks_group, roles=list(assignment.roles)))
     if not derived:

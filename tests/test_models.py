@@ -1228,47 +1228,47 @@ class TestFederationRoleAssignmentKeystoneGroup:
         assert "keystone_group must be a string" in errors[0]
 
 
-class TestFederationConfigGroupMode:
-    """FederationConfig with mapping_mode, group_domain, group_name_separator."""
+class TestFederationConfigMode:
+    """FederationConfig with mode and group_name_separator."""
 
     def test_from_dict_defaults(self) -> None:
         result = FederationConfig.from_dict({})
-        assert result.mapping_mode == "project"
+        assert result.mode == "project"
         assert result.group_name_separator == " "
 
     def test_from_dict_group_mode(self) -> None:
         data = {
-            "mapping_mode": "group",
-            "group_name_separator": "-",
+            "mode": "group",
+            "group_name_separator": " ",
         }
         result = FederationConfig.from_dict(data)
-        assert result.mapping_mode == "group"
-        assert result.group_name_separator == "-"
+        assert result.mode == "group"
+        assert result.group_name_separator == " "
 
     def test_validate_group_mode(self) -> None:
-        data = {"mapping_mode": "group"}
+        data = {"mode": "group"}
         errors: list[str] = []
         result = FederationConfig.validate(data, errors, "test")
-        assert result.mapping_mode == "group"
+        assert result.mode == "group"
         assert errors == []
 
     def test_validate_project_mode(self) -> None:
-        data = {"mapping_mode": "project"}
+        data = {"mode": "project"}
         errors: list[str] = []
         result = FederationConfig.validate(data, errors, "test")
-        assert result.mapping_mode == "project"
+        assert result.mode == "project"
         assert errors == []
 
 
-class TestFederationConfigGroupModeValidation:
-    """Validation rejects invalid mapping_mode."""
+class TestFederationConfigModeValidation:
+    """Validation rejects invalid mode."""
 
-    def test_invalid_mapping_mode(self) -> None:
-        data = {"mapping_mode": "invalid"}
+    def test_invalid_mode(self) -> None:
+        data = {"mode": "invalid"}
         errors: list[str] = []
         FederationConfig.validate(data, errors, "test")
         assert len(errors) == 1
-        assert "mapping_mode must be one of" in errors[0]
+        assert "federation.mode must be one of" in errors[0]
         assert "'invalid'" in errors[0]
 
 

@@ -21,11 +21,16 @@ def _stub_domain(conn: MagicMock, domain_id: str = DOMAIN_UUID) -> None:
 def _make_project_cfg(
     name: str,
     role_assignments: list[dict],
-    mapping_mode: str = "group",
+    mode: str = "group",
     group_name_separator: str = " ",
     state: str = "present",
 ) -> ProjectConfig:
     """Build a minimal project config for keystone group tests."""
+    # Simulate config loader's _resolve_federation_entry_modes():
+    # each entry inherits the federation-level mode unless it already has one.
+    for entry in role_assignments:
+        if "mode" not in entry:
+            entry["mode"] = mode
     return ProjectConfig.from_dict(
         {
             "name": name,
@@ -36,7 +41,7 @@ def _make_project_cfg(
                 "issuer": "https://idp.example.com",
                 "mapping_id": "my-mapping",
                 "role_assignments": role_assignments,
-                "mapping_mode": mapping_mode,
+                "mode": mode,
                 "group_name_separator": group_name_separator,
             },
         }
@@ -111,7 +116,7 @@ class TestEnsureKeystoneGroups:
         cfg = _make_project_cfg(
             "proj",
             [{"idp_group": "member", "roles": ["member"]}],
-            mapping_mode="project",
+            mode="project",
         )
 
         actions = ensure_keystone_groups([cfg], shared_ctx)
@@ -181,3 +186,32 @@ class TestEnsureKeystoneGroups:
         assert len(created) == 2
         names = {a.name for a in created}
         assert names == {"proj member", "proj reader"}
+
+    def test_mixed_entry_modes(self, shared_ctx: SharedContext) -> None:
+        """Only entries with mode=group produce Keystone groups."""
+        cfg = ProjectConfig.from_dict(
+            {
+                "name": "proj",
+                "resource_prefix": "proj",
+                "state": "present",
+                "domain_id": "default",
+                "federation": {
+                    "issuer": "https://idp.example.com",
+                    "mapping_id": "my-mapping",
+                    "mode": "project",
+                    "role_assignments": [
+                        {"idp_group": "member", "roles": ["member"], "mode": "project"},
+                        {"idp_group": "reader", "roles": ["reader"], "mode": "group"},
+                    ],
+                },
+            }
+        )
+        _stub_domain(shared_ctx.conn)
+        shared_ctx.conn.identity.find_group.return_value = None
+
+        actions = ensure_keystone_groups([cfg], shared_ctx)
+
+        # Only the group-mode entry produces a Keystone group
+        created = [a for a in actions if a.status == ActionStatus.CREATED]
+        assert len(created) == 1
+        assert created[0].name == "proj reader"

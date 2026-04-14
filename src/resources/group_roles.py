@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from openstack.exceptions import NotFoundException
 
-from src.utils import Action, ActionStatus, SharedContext, retry
+from src.utils import Action, ActionStatus, SharedContext, identity_v3, retry
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,13 @@ logger = logging.getLogger(__name__)
 @retry()
 def _find_group(conn: Connection, name: str) -> Group | None:
     """Resolve a group name to a Keystone group resource."""
-    return conn.identity.find_group(name)  # type: ignore[no-any-return]
+    return identity_v3(conn).find_group(name)  # type: ignore[no-any-return]
 
 
 @retry()
 def _find_role(conn: Connection, name: str) -> Role | None:
     """Resolve a role name to a Keystone role resource."""
-    return conn.identity.find_role(name)  # type: ignore[no-any-return]
+    return identity_v3(conn).find_role(name)  # type: ignore[no-any-return]
 
 
 @retry()
@@ -45,7 +45,7 @@ def _check_group_role(conn: Connection, project_id: str, group_id: str, role_id:
     raise ``NotFoundException`` instead, so we handle both paths.
     """
     try:
-        result = conn.identity.validate_group_has_project_role(project_id, group_id, role_id)
+        result = identity_v3(conn).validate_group_has_project_role(project_id, group_id, role_id)
         return bool(result)
     except NotFoundException:
         return False
@@ -54,13 +54,13 @@ def _check_group_role(conn: Connection, project_id: str, group_id: str, role_id:
 @retry()
 def _assign_group_role(conn: Connection, project_id: str, group_id: str, role_id: str) -> None:
     """Grant a role to a group on a project."""
-    conn.identity.assign_project_role_to_group(project_id, group_id, role_id)
+    identity_v3(conn).assign_project_role_to_group(project_id, group_id, role_id)
 
 
 @retry()
 def _unassign_group_role(conn: Connection, project_id: str, group_id: str, role_id: str) -> None:
     """Revoke a role from a group on a project."""
-    conn.identity.unassign_project_role_from_group(project_id, group_id, role_id)
+    identity_v3(conn).unassign_project_role_from_group(project_id, group_id, role_id)
 
 
 def ensure_group_role_assignments(

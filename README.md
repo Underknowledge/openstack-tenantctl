@@ -214,7 +214,7 @@ Everything not specified, DHCP, DNS defaults, base quotas, federation mapping, c
 | [User Guide](docs/USER-GUIDE.md) | Setup, operations, troubleshooting |
 | [Configuration Schema](docs/CONFIG-SCHEMA.md) | Every field, every option, with examples |
 | [Specification](docs/SPECIFICATION.md) | Architecture, design patterns, internals |
-| [Design Decisions](docs/DESIGN-DECISIONS.md) | 20 ADRs explaining the "why" |
+| [Design Decisions](docs/DESIGN-DECISIONS.md) | ADRs explaining the "why" |
 | [API Reference](docs/API-REFERENCE.md) | Developer API for extending the tool |
 
 ---
@@ -227,9 +227,9 @@ make lint         # Lint (ruff check + mypy)
 make test         # Run tests (pytest)
 
 make version      # Show current version
-make bump-patch   # 0.2.8 → 0.2.9
-make bump-minor   # 0.2.8 → 0.3.0
-make bump-major   # 0.2.8 → 1.0.0
+make bump-patch   # x.y.z → x.y.(z+1)
+make bump-minor   # x.y.z → x.(y+1).0
+make bump-major   # x.y.z → (x+1).0.0
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and guidelines.

@@ -24,6 +24,7 @@ from src.utils import (
     ActionStatus,
     ProvisionerError,
     SharedContext,
+    identity_v3,
     resolve_external_subnet,
     retry,
     setup_logging,
@@ -65,7 +66,7 @@ def _get_federation_mapping(
 ) -> openstack.resource.Resource:
     """Fetch an existing federation mapping."""
     logger.info("Fetching federation mapping '%s'...", mapping_id)
-    result: openstack.resource.Resource = conn.identity.get_mapping(mapping_id)
+    result: openstack.resource.Resource = identity_v3(conn).get_mapping(mapping_id)
     logger.info("Successfully fetched federation mapping '%s'", mapping_id)
     return result
 
