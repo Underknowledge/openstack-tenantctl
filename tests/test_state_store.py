@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import ipaddress
 import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -209,3 +211,91 @@ class TestSaveOverwritesCorruptedFile:
         # And round-trips correctly
         data = store.load("proj")
         assert data["metadata"]["last_reconciled_state"] == "present"
+
+
+class TestIpAddressCoercion:
+    """save() automatically converts ipaddress objects to strings."""
+
+    def test_ipv4_address_stored_as_string(self, tmp_path: Path) -> None:
+        """IPv4Address objects are coerced to string."""
+        store = YamlFileStateStore(tmp_path / "state")
+        store.save("proj", ["gateway"], ipaddress.IPv4Address("192.168.1.1"))
+
+        data = store.load("proj")
+        assert data["gateway"] == "192.168.1.1"
+        assert isinstance(data["gateway"], str)
+
+    def test_ipv6_address_stored_as_string(self, tmp_path: Path) -> None:
+        """IPv6Address objects are coerced to string."""
+        store = YamlFileStateStore(tmp_path / "state")
+        store.save("proj", ["gateway"], ipaddress.IPv6Address("::1"))
+
+        data = store.load("proj")
+        assert data["gateway"] == "::1"
+        assert isinstance(data["gateway"], str)
+
+    def test_ipv4_network_stored_as_string(self, tmp_path: Path) -> None:
+        """IPv4Network objects are coerced to string."""
+        store = YamlFileStateStore(tmp_path / "state")
+        store.save("proj", ["cidr"], ipaddress.IPv4Network("10.0.0.0/24"))
+
+        data = store.load("proj")
+        assert data["cidr"] == "10.0.0.0/24"
+        assert isinstance(data["cidr"], str)
+
+    def test_ipv6_network_stored_as_string(self, tmp_path: Path) -> None:
+        """IPv6Network objects are coerced to string."""
+        store = YamlFileStateStore(tmp_path / "state")
+        store.save("proj", ["cidr"], ipaddress.IPv6Network("2001:db8::/32"))
+
+        data = store.load("proj")
+        assert data["cidr"] == "2001:db8::/32"
+        assert isinstance(data["cidr"], str)
+
+    def test_yaml_file_has_no_python_tags(self, tmp_path: Path) -> None:
+        """ipaddress objects serialize to clean YAML without Python tags."""
+        store = YamlFileStateStore(tmp_path / "state")
+        store.save("proj", ["gateway"], ipaddress.IPv4Address("10.0.0.1"))
+
+        content = (tmp_path / "state" / "proj.state.yaml").read_text(encoding="utf-8")
+        assert "!!python" not in content
+        assert "10.0.0.1" in content
+
+
+@dataclasses.dataclass
+class _FakeEntry:
+    """Test dataclass for verifying rejection."""
+
+    id: str
+    value: int
+
+
+class TestDataclassRejection:
+    """save() rejects dataclass instances with a helpful error."""
+
+    def test_dataclass_raises_type_error(self, tmp_path: Path) -> None:
+        """Dataclass instances raise TypeError."""
+        store = YamlFileStateStore(tmp_path / "state")
+        entry = _FakeEntry(id="abc", value=42)
+
+        with pytest.raises(TypeError, match="Cannot save dataclass instance _FakeEntry directly"):
+            store.save("proj", ["entry"], entry)
+
+    def test_error_message_suggests_to_dict(self, tmp_path: Path) -> None:
+        """TypeError message guides user to call .to_dict()."""
+        store = YamlFileStateStore(tmp_path / "state")
+        entry = _FakeEntry(id="abc", value=42)
+
+        with pytest.raises(TypeError, match=r"Call \.to_dict\(\) first"):
+            store.save("proj", ["entry"], entry)
+
+    def test_dataclass_dict_works_fine(self, tmp_path: Path) -> None:
+        """Calling .to_dict() on dataclass before save() works."""
+        store = YamlFileStateStore(tmp_path / "state")
+        entry = _FakeEntry(id="abc", value=42)
+
+        # Manual .to_dict() equivalent
+        store.save("proj", ["entry"], {"id": entry.id, "value": entry.value})
+
+        data = store.load("proj")
+        assert data["entry"] == {"id": "abc", "value": 42}

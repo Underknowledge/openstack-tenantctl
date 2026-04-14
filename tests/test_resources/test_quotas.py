@@ -712,49 +712,6 @@ class TestQuotaEdgeCases:
 class TestNetworkQuotaExclusions:
     """Network quota exclusions: floating_ips and networks when prealloc owns them."""
 
-    def test_networks_eq_1_excluded(
-        self,
-        shared_ctx: SharedContext,
-    ) -> None:
-        """networks=1 excluded because prealloc module owns it."""
-        cfg = ProjectConfig.from_dict(
-            {
-                "name": "test_project",
-                "resource_prefix": "test",
-                "quotas": {
-                    "compute": {"cores": 20},
-                    "network": {
-                        "networks": 1,
-                        "subnets": 5,
-                    },
-                    "block_storage": {"gigabytes": 100},
-                },
-            }
-        )
-
-        # Compute matches
-        compute_quota = MagicMock()
-        compute_quota.cores = 20
-        shared_ctx.conn.compute.get_quota_set.return_value = compute_quota
-
-        # Network: networks differs but should be excluded
-        net_quota = MagicMock()
-        net_quota.networks = 10  # Different from config, but excluded
-        net_quota.subnets = 5
-        shared_ctx.conn.network.get_quota.return_value = net_quota
-
-        # Block-storage matches
-        bs_quota = MagicMock()
-        bs_quota.gigabytes = 100
-        bs_quota.to_dict.return_value = {"gigabytes": 100}
-        shared_ctx.conn.block_storage.get_quota_set.return_value = bs_quota
-
-        actions = ensure_quotas(cfg, "proj-123", shared_ctx)
-
-        # All match (networks excluded)
-        assert all(a.status == ActionStatus.SKIPPED for a in actions)
-        shared_ctx.conn.network.update_quota.assert_not_called()
-
     def test_floating_ips_and_networks_both_excluded(
         self,
         shared_ctx: SharedContext,

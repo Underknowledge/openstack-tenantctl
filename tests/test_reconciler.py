@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from src.models import ProjectConfig
-from src.reconciler import _PHASE_KEYSTONE_GROUPS, reconcile
+from src.reconciler import _PHASE_KEYSTONE_GROUPS, ReconcileScope, reconcile
 from src.utils import Action, ActionStatus, SharedContext
 
 
@@ -1174,3 +1174,386 @@ class TestKeystoneGroupsInReconciler:
         reconcile([cfg], [cfg], shared_ctx)
 
         patched_resources.augment_group_role_assignments.assert_called_once_with(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Scoped reconciliation tests
+# ---------------------------------------------------------------------------
+
+
+class TestScopedReconciliation:
+    """Verify selective resource reconciliation via ReconcileScope."""
+
+    def test_scopes_none_runs_all_handlers(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """scopes=None (default) calls every handler — backward compat."""
+        reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx, scopes=None)
+
+        patched_resources.ensure_keystone_groups.assert_called_once()
+        patched_resources.ensure_project.assert_called_once()
+        patched_resources.ensure_group_role_assignments.assert_called_once()
+        patched_resources.ensure_network_stack.assert_called_once()
+        patched_resources.track_router_ips.assert_called_once()
+        patched_resources.ensure_preallocated_fips.assert_called_once()
+        patched_resources.ensure_preallocated_network.assert_called_once()
+        patched_resources.ensure_quotas.assert_called_once()
+        patched_resources.ensure_baseline_sg.assert_called_once()
+        patched_resources.ensure_federation_mapping.assert_called_once()
+
+    def test_scopes_fips_only(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{FIPS} runs only ensure_preallocated_fips + always-run steps."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.FIPS},
+        )
+
+        patched_resources.ensure_project.assert_called_once()
+        patched_resources.ensure_preallocated_fips.assert_called_once()
+
+        patched_resources.ensure_group_role_assignments.assert_not_called()
+        patched_resources.ensure_network_stack.assert_not_called()
+        patched_resources.track_router_ips.assert_not_called()
+        patched_resources.ensure_preallocated_network.assert_not_called()
+        patched_resources.ensure_quotas.assert_not_called()
+        patched_resources.ensure_baseline_sg.assert_not_called()
+        patched_resources.unshelve_all_servers.assert_not_called()
+
+    def test_scopes_quotas_only(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{QUOTAS} runs only ensure_quotas + always-run steps."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.QUOTAS},
+        )
+
+        patched_resources.ensure_project.assert_called_once()
+        patched_resources.ensure_quotas.assert_called_once()
+
+        patched_resources.ensure_group_role_assignments.assert_not_called()
+        patched_resources.ensure_network_stack.assert_not_called()
+        patched_resources.ensure_preallocated_fips.assert_not_called()
+        patched_resources.ensure_baseline_sg.assert_not_called()
+
+    def test_scopes_network_includes_track_router_ips(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{NETWORK} runs both ensure_network_stack and track_router_ips."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.NETWORK},
+        )
+
+        patched_resources.ensure_network_stack.assert_called_once()
+        patched_resources.track_router_ips.assert_called_once()
+
+        patched_resources.ensure_preallocated_fips.assert_not_called()
+        patched_resources.ensure_quotas.assert_not_called()
+
+    def test_scopes_multiple(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{QUOTAS, FIPS} runs both but skips network/roles/SG."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.QUOTAS, ReconcileScope.FIPS},
+        )
+
+        patched_resources.ensure_quotas.assert_called_once()
+        patched_resources.ensure_preallocated_fips.assert_called_once()
+
+        patched_resources.ensure_group_role_assignments.assert_not_called()
+        patched_resources.ensure_network_stack.assert_not_called()
+        patched_resources.track_router_ips.assert_not_called()
+        patched_resources.ensure_preallocated_network.assert_not_called()
+        patched_resources.ensure_baseline_sg.assert_not_called()
+
+    def test_scopes_suppresses_unshelve(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """Even on locked->present transition, unshelve is skipped when scopes is set."""
+        shared_ctx.state_store.load.return_value = {
+            "metadata": {"last_reconciled_state": "locked"},
+        }
+
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.FIPS},
+        )
+
+        patched_resources.unshelve_all_servers.assert_not_called()
+
+    def test_scopes_skips_keystone_groups(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{FIPS} does NOT call ensure_keystone_groups."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.FIPS},
+        )
+
+        patched_resources.ensure_keystone_groups.assert_not_called()
+
+    def test_scopes_skips_federation(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{FIPS} does NOT call ensure_federation_mapping."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.FIPS},
+        )
+
+        patched_resources.ensure_federation_mapping.assert_not_called()
+
+    def test_scopes_keystone_groups_explicit(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{KEYSTONE_GROUPS, FIPS} calls ensure_keystone_groups."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.KEYSTONE_GROUPS, ReconcileScope.FIPS},
+        )
+
+        patched_resources.ensure_keystone_groups.assert_called_once()
+        patched_resources.ensure_preallocated_fips.assert_called_once()
+        patched_resources.ensure_federation_mapping.assert_not_called()
+
+    def test_scopes_ignored_for_locked(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        _make_project_cfg,
+    ) -> None:
+        """Locked state runs full pipeline regardless of scopes."""
+        cfg = _make_project_cfg("locked_project", state="locked")
+
+        project_action = Action(
+            status=ActionStatus.UPDATED,
+            resource_type="project",
+            name="locked_project",
+        )
+        patched_resources.ensure_project.return_value = (project_action, "proj-locked-id")
+
+        reconcile([cfg], [cfg], shared_ctx, scopes={ReconcileScope.FIPS})
+
+        patched_resources.ensure_project.assert_called_once()
+        patched_resources.shelve_all_servers.assert_called_once()
+
+    def test_scopes_ignored_for_absent(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        _make_project_cfg,
+    ) -> None:
+        """Absent state runs full pipeline regardless of scopes."""
+        cfg = _make_project_cfg("gone_project", state="absent")
+        patched_resources.find_existing_project.return_value = ("proj-gone-id", "default")
+        patched_resources.safety_check.return_value = []
+
+        reconcile([cfg], [cfg], shared_ctx, scopes={ReconcileScope.FIPS})
+
+        patched_resources.find_existing_project.assert_called_once()
+        patched_resources.safety_check.assert_called_once()
+        patched_resources.teardown_project.assert_called_once()
+
+    def test_empty_scopes_raises(self) -> None:
+        """Empty set raises ValueError."""
+        from src.reconciler import validate_scopes
+
+        with pytest.raises(ValueError, match="non-empty set"):
+            validate_scopes(set())
+
+    def test_invalid_scope_raises(self) -> None:
+        """Unknown scope string raises ValueError."""
+        from src.reconciler import validate_scopes
+
+        with pytest.raises(ValueError, match="bogus"):
+            validate_scopes({"bogus"})
+
+    def test_ensure_project_always_runs(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """{FIPS} still calls ensure_project."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.FIPS},
+        )
+
+        patched_resources.ensure_project.assert_called_once()
+
+    def test_metadata_always_persisted(
+        self,
+        patched_resources: SimpleNamespace,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """State store save called for metadata even when scoped."""
+        reconcile(
+            [sample_project_cfg],
+            [sample_project_cfg],
+            shared_ctx,
+            scopes={ReconcileScope.FIPS},
+        )
+
+        save_calls = shared_ctx.state_store.save.call_args_list
+        project_id_calls = [c for c in save_calls if c[0][1] == ["metadata", "project_id"]]
+        assert len(project_id_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Scope dependency validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestScopeDependencyValidation:
+    """Verify validate_scopes enforces and auto-expands scope dependencies."""
+
+    def test_fips_without_network_raises(self) -> None:
+        """FIPS without NETWORK raises ValueError mentioning 'network'."""
+        from src.reconciler import validate_scopes
+
+        with pytest.raises(ValueError, match="network"):
+            validate_scopes({ReconcileScope.FIPS})
+
+    def test_prealloc_network_without_network_raises(self) -> None:
+        """PREALLOC_NETWORK without NETWORK raises ValueError."""
+        from src.reconciler import validate_scopes
+
+        with pytest.raises(ValueError, match="network"):
+            validate_scopes({ReconcileScope.PREALLOC_NETWORK})
+
+    def test_roles_without_keystone_groups_raises(self) -> None:
+        """ROLES without KEYSTONE_GROUPS raises ValueError."""
+        from src.reconciler import validate_scopes
+
+        with pytest.raises(ValueError, match="keystone_groups"):
+            validate_scopes({ReconcileScope.ROLES})
+
+    def test_fips_with_network_passes(self) -> None:
+        """FIPS + NETWORK satisfies dependency — returns the set."""
+        from src.reconciler import validate_scopes
+
+        result = validate_scopes({ReconcileScope.FIPS, ReconcileScope.NETWORK})
+        assert result == {ReconcileScope.FIPS, ReconcileScope.NETWORK}
+
+    def test_independent_scope_passes(self) -> None:
+        """A scope with no dependencies passes without issue."""
+        from src.reconciler import validate_scopes
+
+        result = validate_scopes({ReconcileScope.QUOTAS})
+        assert result == {ReconcileScope.QUOTAS}
+
+    def test_none_scopes_unchanged(self) -> None:
+        """None scopes are returned unchanged (no validation needed)."""
+        from src.reconciler import validate_scopes
+
+        assert validate_scopes(None) is None
+
+    def test_auto_expand_fips_includes_network(self) -> None:
+        """auto_expand_deps=True adds NETWORK when FIPS is requested."""
+        from src.reconciler import validate_scopes
+
+        result = validate_scopes({ReconcileScope.FIPS}, auto_expand_deps=True)
+        assert result == {ReconcileScope.FIPS, ReconcileScope.NETWORK}
+
+    def test_auto_expand_roles_includes_keystone_groups(self) -> None:
+        """auto_expand_deps=True adds KEYSTONE_GROUPS when ROLES is requested."""
+        from src.reconciler import validate_scopes
+
+        result = validate_scopes({ReconcileScope.ROLES}, auto_expand_deps=True)
+        assert result == {ReconcileScope.ROLES, ReconcileScope.KEYSTONE_GROUPS}
+
+    def test_auto_expand_no_op_when_deps_satisfied(self) -> None:
+        """auto_expand_deps=True is a no-op when all deps are already present."""
+        from src.reconciler import validate_scopes
+
+        result = validate_scopes(
+            {ReconcileScope.FIPS, ReconcileScope.NETWORK},
+            auto_expand_deps=True,
+        )
+        assert result == {ReconcileScope.FIPS, ReconcileScope.NETWORK}
+
+    def test_auto_expand_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Auto-expansion logs each added prerequisite at INFO level."""
+        import logging
+
+        from src.reconciler import validate_scopes
+
+        with caplog.at_level(logging.INFO, logger="src.reconciler"):
+            validate_scopes({ReconcileScope.FIPS}, auto_expand_deps=True)
+
+        assert "auto-including prerequisite" in caplog.text
+        assert "network" in caplog.text
+
+    def test_multiple_missing_deps_all_reported(self) -> None:
+        """Multiple missing deps are all reported in the error message."""
+        from src.reconciler import validate_scopes
+
+        with pytest.raises(ValueError, match="network") as exc_info:
+            validate_scopes({ReconcileScope.FIPS, ReconcileScope.ROLES})
+        assert "keystone_groups" in str(exc_info.value)
+
+    def test_shared_dep_expanded_once(self) -> None:
+        """FIPS + PREALLOC_NETWORK both need NETWORK — expanded once."""
+        from src.reconciler import validate_scopes
+
+        result = validate_scopes(
+            {ReconcileScope.FIPS, ReconcileScope.PREALLOC_NETWORK},
+            auto_expand_deps=True,
+        )
+        assert result == {
+            ReconcileScope.FIPS,
+            ReconcileScope.PREALLOC_NETWORK,
+            ReconcileScope.NETWORK,
+        }

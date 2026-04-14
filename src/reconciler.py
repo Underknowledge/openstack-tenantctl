@@ -17,6 +17,7 @@ import dataclasses
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from src.models import ProjectConfig
 from src.resources.compute import shelve_all_servers, unshelve_all_servers
@@ -48,6 +49,93 @@ _PHASE_FEDERATION = "__federation__"
 
 # Type alias for state handler functions.
 StateHandler = Callable[[ProjectConfig, SharedContext], None]
+
+
+class ReconcileScope(StrEnum):
+    """Selectable resource scopes for partial reconciliation.
+
+    When passed to ``reconcile()`` via the *scopes* parameter, only the
+    listed handlers run during the ``present`` state.  ``None`` (the
+    default) means "run everything" — full backward compatibility.
+    """
+
+    ROLES = "roles"
+    NETWORK = "network"
+    FIPS = "fips"
+    PREALLOC_NETWORK = "prealloc_network"
+    QUOTAS = "quotas"
+    SECURITY_GROUPS = "security_groups"
+    KEYSTONE_GROUPS = "keystone_groups"
+    FEDERATION = "federation"
+
+
+_SCOPE_DEPENDENCIES: dict[ReconcileScope, set[ReconcileScope]] = {
+    ReconcileScope.FIPS: {ReconcileScope.NETWORK},
+    ReconcileScope.PREALLOC_NETWORK: {ReconcileScope.NETWORK},
+    ReconcileScope.ROLES: {ReconcileScope.KEYSTONE_GROUPS},
+}
+
+
+def _expand_scope_dependencies(scopes: set[ReconcileScope]) -> set[ReconcileScope]:
+    """Add prerequisite scopes until the set stabilises (fixed-point).
+
+    Iterates at most ``len(ReconcileScope)`` times (one per possible
+    addition).  Each auto-included scope is logged at INFO level.
+    """
+    expanded = set(scopes)
+    for _ in range(len(ReconcileScope)):
+        additions: set[ReconcileScope] = set()
+        for scope in expanded:
+            for dep in _SCOPE_DEPENDENCIES.get(scope, set()):
+                if dep not in expanded:
+                    additions.add(dep)
+        if not additions:
+            break
+        for dep in sorted(additions, key=lambda s: s.value):
+            logger.info("auto-including prerequisite scope %r (required by scopes in --only)", dep.value)
+        expanded |= additions
+    return expanded
+
+
+def validate_scopes(
+    scopes: set[ReconcileScope] | None,
+    *,
+    auto_expand_deps: bool = False,
+) -> set[ReconcileScope] | None:
+    """Normalize, validate, and optionally expand a scope set.
+
+    Returns ``None`` unchanged (meaning "all scopes").  A non-empty set is
+    returned with every element coerced to :class:`ReconcileScope` (so
+    callers may pass plain strings).  Raises :class:`ValueError` on empty
+    sets or unknown values.
+
+    When *auto_expand_deps* is ``False`` (the default), missing prerequisite
+    scopes cause a :class:`ValueError`.  When ``True``, prerequisites are
+    added automatically with an INFO-level log message.
+    """
+    if scopes is None:
+        return None
+    if not scopes:
+        msg = "scopes must be None (all) or a non-empty set of ReconcileScope values"
+        raise ValueError(msg)
+    coerced = {ReconcileScope(s) for s in scopes}
+
+    if auto_expand_deps:
+        return _expand_scope_dependencies(coerced)
+
+    # Fail-fast: check all dependencies are satisfied.
+    missing: list[str] = [
+        f"scope {scope.value!r} requires {dep.value!r}"
+        for scope in sorted(coerced, key=lambda s: s.value)
+        for dep in sorted(_SCOPE_DEPENDENCIES.get(scope, set()), key=lambda s: s.value)
+        if dep not in coerced
+    ]
+    if missing:
+        details = "; ".join(missing)
+        msg = f"Missing scope dependencies: {details} — include them explicitly or use auto_expand_deps=True"
+        raise ValueError(msg)
+
+    return coerced
 
 
 def _persist_project_metadata(cfg: ProjectConfig, project_id: str, ctx: SharedContext) -> None:
@@ -101,31 +189,49 @@ def _preflight_present(cfg: ProjectConfig, ctx: SharedContext) -> None:
         resolve_project_external_network(cfg, ctx)
 
 
-def _reconcile_present(cfg: ProjectConfig, ctx: SharedContext) -> None:
+def _reconcile_present(
+    cfg: ProjectConfig,
+    ctx: SharedContext,
+    *,
+    scopes: set[ReconcileScope] | None = None,
+) -> None:
     """Full provisioning pipeline + conditional unshelve.
 
-    Unshelve only runs when transitioning from locked->present (detected
-    via state-store metadata or API fallback).  On steady-state present
-    runs, users may have intentionally shelved servers.
+    When *scopes* is ``None`` (default), every handler runs — full backward
+    compatibility.  When a non-empty set is supplied, only the listed
+    resource handlers execute.  ``ensure_project``, preflight checks, and
+    metadata persistence always run regardless of *scopes*.
+
+    Unshelve is suppressed when *scopes* is set because it is a state
+    transition, not a resource update.
     """
     _preflight_present(cfg, ctx)
 
-    # Check BEFORE ensure_project() changes the enabled flag.
-    should_unshelve = _should_unshelve(cfg, ctx)
+    # Unshelve only on full reconciliation (scopes=None).
+    should_unshelve = scopes is None and _should_unshelve(cfg, ctx)
 
     _action, project_id = ensure_project(cfg, ctx)
     ctx.current_project_id = project_id
 
     _persist_project_metadata(cfg, project_id, ctx)
 
-    effective_cfg = augment_group_role_assignments(cfg)
-    ensure_group_role_assignments(effective_cfg, project_id, ctx)
-    ensure_network_stack(cfg, project_id, ctx)
-    track_router_ips(cfg, project_id, ctx)
-    ensure_preallocated_fips(cfg, project_id, ctx)
-    ensure_preallocated_network(cfg, project_id, ctx)
-    ensure_quotas(cfg, project_id, ctx)
-    ensure_baseline_sg(cfg, project_id, ctx)
+    def _in_scope(scope: ReconcileScope) -> bool:
+        return scopes is None or scope in scopes
+
+    if _in_scope(ReconcileScope.ROLES):
+        effective_cfg = augment_group_role_assignments(cfg)
+        ensure_group_role_assignments(effective_cfg, project_id, ctx)
+    if _in_scope(ReconcileScope.NETWORK):
+        ensure_network_stack(cfg, project_id, ctx)
+        track_router_ips(cfg, project_id, ctx)
+    if _in_scope(ReconcileScope.FIPS):
+        ensure_preallocated_fips(cfg, project_id, ctx)
+    if _in_scope(ReconcileScope.PREALLOC_NETWORK):
+        ensure_preallocated_network(cfg, project_id, ctx)
+    if _in_scope(ReconcileScope.QUOTAS):
+        ensure_quotas(cfg, project_id, ctx)
+    if _in_scope(ReconcileScope.SECURITY_GROUPS):
+        ensure_baseline_sg(cfg, project_id, ctx)
 
     if should_unshelve:
         unshelve_all_servers(cfg, project_id, ctx)
@@ -222,17 +328,12 @@ def _reconcile_absent(cfg: ProjectConfig, ctx: SharedContext) -> None:
     teardown_project(cfg, project_id, ctx)
 
 
-_STATE_HANDLERS: dict[str, StateHandler] = {
-    "present": _reconcile_present,
-    "locked": _reconcile_locked,
-    "absent": _reconcile_absent,
-}
-
-
 def reconcile(
     projects: list[ProjectConfig],
     all_projects: list[ProjectConfig],
     ctx: SharedContext,
+    *,
+    scopes: set[ReconcileScope] | None = None,
 ) -> list[Action]:
     """Phase 3: per-project resources, then shared federation mapping.
 
@@ -264,18 +365,23 @@ def reconcile(
         all_projects: ALL project configs (needed for federation mapping
             even with --project filter).
         ctx: SharedContext with connection, dry_run flag, etc.
+        scopes: When ``None`` (default), every handler runs.  When a
+            non-empty set of :class:`ReconcileScope` values, only matching
+            handlers execute for ``present``-state projects.  ``locked``
+            and ``absent`` states always run their full pipeline.
 
     Returns:
         List of all actions taken (same as ``ctx.actions``).
     """
     # Create Keystone groups needed by group-mode federation before
     # per-project reconciliation (groups must exist before role assignment).
-    ctx.current_project_name = _PHASE_KEYSTONE_GROUPS
-    try:
-        ensure_keystone_groups(all_projects, ctx)
-    except Exception as exc:
-        logger.exception("Failed to ensure Keystone groups: %s", exc)
-        ctx.failed_projects.append(_PHASE_KEYSTONE_GROUPS)
+    if scopes is None or ReconcileScope.KEYSTONE_GROUPS in scopes:
+        ctx.current_project_name = _PHASE_KEYSTONE_GROUPS
+        try:
+            ensure_keystone_groups(all_projects, ctx)
+        except Exception as exc:
+            logger.exception("Failed to ensure Keystone groups: %s", exc)
+            ctx.failed_projects.append(_PHASE_KEYSTONE_GROUPS)
 
     for cfg in projects:
         project_name: str = cfg.name
@@ -283,14 +389,17 @@ def reconcile(
         logger.info("Reconciling project: %s (state=%s)", project_name, state)
         ctx.current_project_name = project_name
 
-        handler = _STATE_HANDLERS.get(state)
-        if handler is None:
-            logger.error("Unknown state %r for project %s", state, project_name)
-            ctx.failed_projects.append(project_name)
-            continue
-
         try:
-            handler(cfg, ctx)
+            if state == "present":
+                _reconcile_present(cfg, ctx, scopes=scopes)
+            elif state == "locked":
+                _reconcile_locked(cfg, ctx)
+            elif state == "absent":
+                _reconcile_absent(cfg, ctx)
+            else:
+                logger.error("Unknown state %r for project %s", state, project_name)
+                ctx.failed_projects.append(project_name)
+                continue
         except Exception as exc:
             logger.exception(
                 "Failed to reconcile project %s (%s): %s",
@@ -317,17 +426,18 @@ def reconcile(
 
     # Federation mapping is a shared resource built from ALL projects,
     # regardless of the --project filter.
-    ctx.current_project_id = ""
-    ctx.current_project_name = ""
-    logger.info("Reconciling federation mapping")
-    try:
-        ensure_federation_mapping(all_projects, ctx)
-    except Exception as exc:
-        logger.exception(
-            "Failed to reconcile federation mapping (%s): %s",
-            type(exc).__name__,
-            exc,
-        )
-        ctx.failed_projects.append(_PHASE_FEDERATION)
+    if scopes is None or ReconcileScope.FEDERATION in scopes:
+        ctx.current_project_id = ""
+        ctx.current_project_name = ""
+        logger.info("Reconciling federation mapping")
+        try:
+            ensure_federation_mapping(all_projects, ctx)
+        except Exception as exc:
+            logger.exception(
+                "Failed to reconcile federation mapping (%s): %s",
+                type(exc).__name__,
+                exc,
+            )
+            ctx.failed_projects.append(_PHASE_FEDERATION)
 
     return ctx.actions

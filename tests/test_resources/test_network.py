@@ -230,11 +230,6 @@ class TestGetRouterExternalIp:
         router = _make_router("r1", "router1", None)
         assert _get_router_external_ip(router) is None
 
-    def test_returns_none_when_no_fixed_ips(self) -> None:
-        router = MagicMock()
-        router.external_gateway_info = {"external_fixed_ips": []}
-        assert _get_router_external_ip(router) is None
-
     def test_returns_none_for_magicmock_gateway(self) -> None:
         """MagicMock gateway (not a dict) should return None."""
         router = MagicMock()
@@ -731,31 +726,20 @@ class TestNoNetworkConfigured:
 class TestGetRouterExternalIpMissingFields:
     """_get_router_external_ip edge cases: missing gateway_info structure."""
 
-    def test_gateway_info_not_dict_returns_none(self) -> None:
-        """When gateway_info is not a dict (e.g. MagicMock), return None."""
+    @pytest.mark.parametrize(
+        "gateway_info",
+        [
+            "not-a-dict",
+            {"network_id": "ext-net-123"},
+            {"external_fixed_ips": []},
+            {"external_fixed_ips": [{"subnet_id": "subnet-123"}]},
+        ],
+        ids=["not-dict", "no-fixed-ips-key", "empty-fixed-ips", "no-ip-address-key"],
+    )
+    def test_returns_none(self, gateway_info: object) -> None:
         router = MagicMock()
-        router.external_gateway_info = "not-a-dict"
+        router.external_gateway_info = gateway_info
         assert _get_router_external_ip(router) is None
-
-    def test_gateway_info_dict_no_external_fixed_ips_key(self) -> None:
-        """When gateway_info dict has no external_fixed_ips key, return None."""
-        router = MagicMock()
-        router.external_gateway_info = {"network_id": "ext-net-123"}
-        assert _get_router_external_ip(router) is None
-
-    def test_gateway_info_external_fixed_ips_empty_list(self) -> None:
-        """When external_fixed_ips is empty list, return None."""
-        router = MagicMock()
-        router.external_gateway_info = {"external_fixed_ips": []}
-        assert _get_router_external_ip(router) is None
-
-    def test_gateway_info_fixed_ip_no_ip_address_key(self) -> None:
-        """When fixed_ip dict has no ip_address key, return None."""
-        router = MagicMock()
-        router.external_gateway_info = {"external_fixed_ips": [{"subnet_id": "subnet-123"}]}
-        result = _get_router_external_ip(router)
-        # dict.get() returns None for missing keys, not MagicMock
-        assert result is None
 
 
 class TestTrackRouterIpsMultipleChanges:

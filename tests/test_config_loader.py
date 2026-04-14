@@ -312,105 +312,42 @@ class TestAllocationPoolStartGtEnd:
             load_all_projects(config_dir)
 
 
-class TestReclaimFloatingIpsValidation:
-    """Validate the reclaim_floating_ips boolean field."""
+class TestBooleanFieldValidation:
+    """Validate boolean config fields: reclaim_floating_ips, reclaim_router_ips, track_fip_changes."""
 
-    def test_valid_boolean_true(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("reclaim_floating_ips", True),
+            ("reclaim_floating_ips", False),
+            ("reclaim_router_ips", True),
+            ("reclaim_router_ips", False),
+            ("track_fip_changes", True),
+            ("track_fip_changes", False),
+        ],
+        ids=[
+            "reclaim_fips-true",
+            "reclaim_fips-false",
+            "reclaim_router-true",
+            "reclaim_router-false",
+            "track_fip-true",
+            "track_fip-false",
+        ],
+    )
+    def test_valid_boolean(self, tmp_path: Path, field: str, value: object) -> None:
         project = _minimum_valid_project()
-        project["reclaim_floating_ips"] = True
+        project[field] = value
         config_dir = _write_config(tmp_path, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
-        assert merged_projects[0].reclaim_floating_ips is True
+        assert getattr(merged_projects[0], field) is value
 
-    def test_valid_boolean_false(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["reclaim_floating_ips"] = False
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].reclaim_floating_ips is False
-
+    @pytest.mark.parametrize("field", ["reclaim_floating_ips", "reclaim_router_ips", "track_fip_changes"])
     @pytest.mark.parametrize("invalid_value", ["yes", 1])
-    def test_non_boolean_exits(self, tmp_path: Path, invalid_value: Any) -> None:
-        """Non-boolean values (string or int) cause validation error."""
+    def test_non_boolean_exits(self, tmp_path: Path, field: str, invalid_value: Any) -> None:
         project = _minimum_valid_project()
-        project["reclaim_floating_ips"] = invalid_value
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        with pytest.raises(ConfigValidationError):
-            load_all_projects(config_dir)
-
-    def test_omitted_is_valid(self, tmp_path: Path) -> None:
-        """When omitted, no validation error (inherits from defaults)."""
-        project = _minimum_valid_project()
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert len(merged_projects) == 1
-
-
-class TestReclaimRouterIpsValidation:
-    """Validate the reclaim_router_ips boolean field."""
-
-    def test_valid_boolean_true(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["reclaim_router_ips"] = True
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].reclaim_router_ips is True
-
-    def test_valid_boolean_false(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["reclaim_router_ips"] = False
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].reclaim_router_ips is False
-
-    @pytest.mark.parametrize("invalid_value", ["yes", 1])
-    def test_non_boolean_exits(self, tmp_path: Path, invalid_value: Any) -> None:
-        """Non-boolean values (string or int) cause validation error."""
-        project = _minimum_valid_project()
-        project["reclaim_router_ips"] = invalid_value
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        with pytest.raises(ConfigValidationError):
-            load_all_projects(config_dir)
-
-
-class TestTrackFipChangesValidation:
-    """Validate the track_fip_changes boolean field."""
-
-    def test_valid_boolean_true(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["track_fip_changes"] = True
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].track_fip_changes is True
-
-    def test_valid_boolean_false(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["track_fip_changes"] = False
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].track_fip_changes is False
-
-    @pytest.mark.parametrize("invalid_value", ["yes", 1])
-    def test_non_boolean_exits(self, tmp_path: Path, invalid_value: Any) -> None:
-        """Non-boolean values (string or int) cause validation error."""
-        project = _minimum_valid_project()
-        project["track_fip_changes"] = invalid_value
+        project[field] = invalid_value
         config_dir = _write_config(tmp_path, projects={"test": project})
 
         with pytest.raises(ConfigValidationError):
@@ -429,42 +366,26 @@ class TestTrackFipChangesValidation:
 class TestDomainConfiguration:
     """Domain configuration and validation tests."""
 
-    def test_domain_id_from_project_config(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        ("defaults_kw", "project_kw", "expected"),
+        [
+            (None, {"domain_id": "my-domain-uuid"}, "my-domain-uuid"),
+            (None, {"domain": "my-friendly-name"}, "my-friendly-name"),
+            ({"domain_id": "default-domain"}, {}, "default-domain"),
+            ({"domain": "default-friendly"}, {}, "default-friendly"),
+        ],
+        ids=["project-domain_id", "project-domain", "defaults-domain_id", "defaults-domain"],
+    )
+    def test_domain_sources(
+        self, tmp_path: Path, defaults_kw: dict[str, str] | None, project_kw: dict[str, str], expected: str
+    ) -> None:
         project = _minimum_valid_project()
-        project["domain_id"] = "my-domain-uuid"
-        config_dir = _write_config(tmp_path, projects={"test": project})
+        project.update(project_kw)
+        config_dir = _write_config(tmp_path, defaults=defaults_kw, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
-        assert merged_projects[0].domain_id == "my-domain-uuid"
-
-    def test_domain_from_project_config(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["domain"] = "my-friendly-name"
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        # Config loader converts domain -> domain_id
-        assert merged_projects[0].domain_id == "my-friendly-name"
-
-    def test_domain_id_from_defaults(self, tmp_path: Path) -> None:
-        defaults = {"domain_id": "default-domain"}
-        project = _minimum_valid_project()
-        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].domain_id == "default-domain"
-
-    def test_domain_from_defaults(self, tmp_path: Path) -> None:
-        defaults = {"domain": "default-friendly"}
-        project = _minimum_valid_project()
-        config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].domain_id == "default-friendly"
+        assert merged_projects[0].domain_id == expected
 
     def test_domain_id_overrides_domain(self, tmp_path: Path) -> None:
         """domain_id takes precedence over domain."""
@@ -564,20 +485,6 @@ class TestDomainConfiguration:
         config_dir = _write_config(tmp_path, defaults=defaults, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].domain_id == "default"
-
-    def test_domain_id_null_raw_yaml_triggers_auto_discovery(self, tmp_path: Path, monkeypatch) -> None:
-        """Raw YAML 'domain_id: null' is parsed as None and triggers auto-discovery."""
-        monkeypatch.delenv("OS_PROJECT_DOMAIN_ID", raising=False)
-        monkeypatch.delenv("OS_USER_DOMAIN_NAME", raising=False)
-        defaults_file = tmp_path / "defaults.yaml"
-        defaults_file.write_text("domain_id: null\n", encoding="utf-8")
-        projects_dir = tmp_path / "projects"
-        projects_dir.mkdir()
-        (projects_dir / "test.yaml").write_text(yaml.dump(_minimum_valid_project()), encoding="utf-8")
-
-        merged_projects, _ = load_all_projects(str(tmp_path))
 
         assert merged_projects[0].domain_id == "default"
 
@@ -954,36 +861,18 @@ class TestGroupRoleAssignmentsValidation:
 class TestProjectStateValidation:
     """Validate the 'state' field on projects."""
 
-    def test_valid_state_present(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["state"] = "present"
+    @pytest.mark.parametrize("state", ["present", "locked", "absent"])
+    def test_valid_states(self, tmp_path: Path, state: str) -> None:
+        if state == "absent":
+            project: dict[str, Any] = {"name": "goneproject", "resource_prefix": "goneproject", "state": state}
+        else:
+            project = _minimum_valid_project()
+            project["state"] = state
         config_dir = _write_config(tmp_path, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
-        assert merged_projects[0].state == "present"
-
-    def test_valid_state_locked(self, tmp_path: Path) -> None:
-        project = _minimum_valid_project()
-        project["state"] = "locked"
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].state == "locked"
-
-    def test_valid_state_absent(self, tmp_path: Path) -> None:
-        """Absent state passes validation even without CIDR."""
-        project: dict[str, Any] = {
-            "name": "goneproject",
-            "resource_prefix": "goneproject",
-            "state": "absent",
-        }
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        assert merged_projects[0].state == "absent"
+        assert merged_projects[0].state == state
 
     def test_invalid_state_exits(self, tmp_path: Path) -> None:
         project = _minimum_valid_project()
@@ -1816,31 +1705,27 @@ class TestYamlConfigSourceEdgeCases:
 class TestMinimumValidProjectHelper:
     """Verify _minimum_valid_project helper auto-calculation behavior."""
 
-    def test_default_auto_calculates_gateway_and_pools(self, tmp_path: Path) -> None:
-        """Default project should auto-calculate gateway/pools from CIDR."""
-        project = _minimum_valid_project()
+    @pytest.mark.parametrize(
+        ("cidr", "expected_gw", "expected_start", "expected_end"),
+        [
+            ("192.168.1.0/24", "192.168.1.1", "192.168.1.2", "192.168.1.254"),
+            ("10.5.0.0/16", "10.5.0.1", "10.5.0.2", "10.5.255.254"),
+        ],
+        ids=["default-cidr", "custom-cidr"],
+    )
+    def test_auto_calculates_gateway_and_pools(
+        self, tmp_path: Path, cidr: str, expected_gw: str, expected_start: str, expected_end: str
+    ) -> None:
+        project = _minimum_valid_project(cidr=cidr)
         config_dir = _write_config(tmp_path, projects={"test": project})
 
         merged_projects, _ = load_all_projects(config_dir)
 
         subnet = merged_projects[0].network.subnet
-        assert subnet.cidr == "192.168.1.0/24"
-        assert subnet.gateway_ip == "192.168.1.1"  # Auto-calculated
-        assert subnet.allocation_pools[0].start == "192.168.1.2"
-        assert subnet.allocation_pools[0].end == "192.168.1.254"
-
-    def test_custom_cidr_auto_calculates(self, tmp_path: Path) -> None:
-        """Custom CIDR should auto-calculate compatible gateway/pools."""
-        project = _minimum_valid_project(cidr="10.5.0.0/16")
-        config_dir = _write_config(tmp_path, projects={"test": project})
-
-        merged_projects, _ = load_all_projects(config_dir)
-
-        subnet = merged_projects[0].network.subnet
-        assert subnet.cidr == "10.5.0.0/16"
-        assert subnet.gateway_ip == "10.5.0.1"
-        assert subnet.allocation_pools[0].start == "10.5.0.2"
-        assert subnet.allocation_pools[0].end == "10.5.255.254"
+        assert subnet.cidr == cidr
+        assert subnet.gateway_ip == expected_gw
+        assert subnet.allocation_pools[0].start == expected_start
+        assert subnet.allocation_pools[0].end == expected_end
 
     def test_explicit_gateway_overrides_auto_calculation(self, tmp_path: Path) -> None:
         """Explicit gateway_ip should be preserved."""

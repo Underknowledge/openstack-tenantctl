@@ -368,11 +368,11 @@ git diff --cached
 
 ### Python Style
 
-We use **Ruff** for formatting and linting:
+We use **Black** for formatting and **Ruff** for linting:
 
 ```bash
 # Format code
-ruff format src/ tests/
+black src/ tests/
 
 # Fix auto-fixable issues
 ruff check --fix src/ tests/
@@ -391,7 +391,7 @@ from __future__ import annotations
 from typing import Any
 
 def ensure_resource(
-    cfg: dict[str, Any],
+    cfg: ProjectConfig,
     project_id: str,
     ctx: SharedContext,
 ) -> Action:
@@ -404,11 +404,11 @@ def ensure_resource(
 Use clear docstrings for all public functions:
 
 ```python
-def ensure_resource(cfg: dict[str, Any], ctx: SharedContext) -> Action:
+def ensure_resource(cfg: ProjectConfig, ctx: SharedContext) -> Action:
     """Ensure resource exists with correct configuration.
 
     Args:
-        cfg: Project configuration dictionary.
+        cfg: Project configuration (ProjectConfig dataclass).
         ctx: SharedContext with connection and shared state.
 
     Returns:

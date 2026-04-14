@@ -205,24 +205,6 @@ def find_network(conn: openstack.connection.Connection, net_name: str, project_i
 
 
 @retry()
-def find_external_network(
-    conn: openstack.connection.Connection,
-    name: str,
-) -> openstack.resource.Resource | None:
-    """Look up an external network by name.
-
-    Args:
-        conn: OpenStack connection object
-        name: Name of the external network to find
-
-    Returns:
-        Network resource if found, None otherwise
-    """
-    result: openstack.resource.Resource | None = conn.network.find_network(name)
-    return result
-
-
-@retry()
 def find_subnet(
     conn: openstack.connection.Connection,
     name_or_id: str,

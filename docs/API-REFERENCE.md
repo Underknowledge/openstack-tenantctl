@@ -10,25 +10,27 @@ Reference for the OpenStack TenantCtl codebase. This document covers core types,
 
 1. [Project Structure](#1-project-structure)
 2. [Core Types (`src.utils`)](#2-core-types-srcutils)
-3. [Configuration Loading (`src.config_loader`)](#3-configuration-loading-srcconfig_loader)
-4. [Configuration Resolution (`src.config_resolver`)](#4-configuration-resolution-srcconfig_resolver)
-5. [Configuration Validation (`src.config_validator`)](#5-configuration-validation-srcconfig_validator)
-6. [State Store (`src.state_store`)](#6-state-store-srcstate_store)
-7. [Orchestration (`src.reconciler`)](#7-orchestration-srcreconciler)
-8. [Resource Modules (`src.resources.*`)](#8-resource-modules-srcresources)
-   - [project](#srcresourcesproject)
-   - [network](#srcresourcesnetwork)
-   - [quotas](#srcresourcesquotas)
-   - [security_group](#srcresourcessecurity_group)
-   - [group_roles](#srcresourcesgroup_roles)
-   - [federation](#srcresourcesfederation)
-   - [keystone_groups](#srcresourceskeystone_groups)
-   - [compute](#srcresourcescompute)
-   - [teardown](#srcresourcesteardown)
-   - [prealloc.fip](#srcresourcespreallocfip)
-   - [prealloc.network](#srcresourcespreallocnetwork)
-9. [CLI Entry Point (`src.main`)](#9-cli-entry-point-srcmain)
-10. [Creating New Resource Types](#10-creating-new-resource-types)
+3. [Library API (`src.client`)](#3-library-api-srcclient)
+4. [Context Helpers (`src.context`)](#4-context-helpers-srccontext)
+5. [Configuration Loading (`src.config_loader`)](#5-configuration-loading-srcconfig_loader)
+6. [Configuration Resolution (`src.config_resolver`)](#6-configuration-resolution-srcconfig_resolver)
+7. [Configuration Validation (`src.config_validator`)](#7-configuration-validation-srcconfig_validator)
+8. [State Store (`src.state_store`)](#8-state-store-srcstate_store)
+9. [Orchestration (`src.reconciler`)](#9-orchestration-srcreconciler)
+10. [Resource Modules (`src.resources.*`)](#10-resource-modules-srcresources)
+    - [project](#srcresourcesproject)
+    - [network](#srcresourcesnetwork)
+    - [quotas](#srcresourcesquotas)
+    - [security_group](#srcresourcessecurity_group)
+    - [group_roles](#srcresourcesgroup_roles)
+    - [federation](#srcresourcesfederation)
+    - [keystone_groups](#srcresourceskeystone_groups)
+    - [compute](#srcresourcescompute)
+    - [teardown](#srcresourcesteardown)
+    - [prealloc.fip](#srcresourcespreallocfip)
+    - [prealloc.network](#srcresourcespreallocnetwork)
+11. [CLI Entry Point (`src.main`)](#11-cli-entry-point-srcmain)
+12. [Creating New Resource Types](#12-creating-new-resource-types)
 
 ---
 
@@ -37,13 +39,15 @@ Reference for the OpenStack TenantCtl codebase. This document covers core types,
 ```
 openstack-tenantctl/
 ├── src/
-│   ├── __init__.py                 # Version info
-│   ├── main.py                     # CLI entry point & three-phase orchestration
+│   ├── __init__.py                 # Public API re-exports with __all__
+│   ├── client.py                   # Library API: TenantCtl class, RunResult
+│   ├── context.py                  # Context-building helpers (external networks, federation)
+│   ├── main.py                     # Thin CLI adapter delegating to TenantCtl
 │   ├── config_loader.py            # YAML loading & deep-merge
 │   ├── config_resolver.py          # Subnet auto-calculation, placeholder substitution
 │   ├── config_validator.py         # Fail-fast validation
 │   ├── reconciler.py               # Per-project resource orchestration
-│   ├── state_store.py              # Runtime state persistence
+│   ├── state_store.py              # Runtime state persistence (YamlFileStateStore, InMemoryStateStore)
 │   ├── utils.py                    # Retry decorator, SharedContext, logging
 │   └── resources/
 │       ├── project.py              # Keystone projects
@@ -142,6 +146,8 @@ class SharedContext:
     conn: openstack.connection.Connection | None = None
     dry_run: bool = False
     external_net_id: str = ""
+    external_subnet_id: str = ""
+    external_network_map: dict[str, str] = field(default_factory=dict)
     current_mapping_rules: list[dict[str, Any]] = field(default_factory=list)
     mapping_exists: bool = False
     static_mapping_rules: list[dict[str, Any]] = field(default_factory=list)
@@ -167,7 +173,9 @@ class SharedContext:
 **Fields**:
 - `conn`: OpenStack SDK connection object (`None` in dry-run mode)
 - `dry_run`: If `True`, resource functions skip actual operations and return SKIPPED actions
-- `external_net_id`: ID of the external network (resolved in Phase 2)
+- `external_net_id`: ID of the default external network (resolved in Phase 2)
+- `external_subnet_id`: ID of the default external subnet (resolved in Phase 2)
+- `external_network_map`: Name→ID and ID→ID map of all external networks (for per-project overrides)
 - `current_mapping_rules`: Current federation mapping rules (from OpenStack)
 - `mapping_exists`: Whether the federation mapping already exists in OpenStack
 - `static_mapping_rules`: Static federation rules (from `federation_static.json`)
@@ -258,7 +266,241 @@ def setup_logging(verbosity: int) -> None:
 
 ---
 
-## 3. Configuration Loading (`src.config_loader`)
+## 3. Library API (`src.client`)
+
+### RunResult
+
+```python
+@dataclass(frozen=True)
+class RunResult:
+    """Immutable result of a TenantCtl.run() invocation."""
+    actions: list[Action] = field(default_factory=list)
+    failed_projects: list[str] = field(default_factory=list)
+    had_connection: bool = False
+```
+
+**Description**: Frozen dataclass returned by `TenantCtl.run()`. Contains the complete list of actions taken, any projects that failed, and whether a live OpenStack connection was used.
+
+**Fields**:
+- `actions`: All `Action` objects recorded during the pipeline run
+- `failed_projects`: Names of projects that encountered errors during reconciliation
+- `had_connection`: `True` if the run connected to OpenStack (even in dry-run with live reads); `False` for offline dry-run
+
+---
+
+### TenantCtl
+
+```python
+class TenantCtl:
+    """High-level API for the tenantctl provisioning pipeline."""
+
+    def __init__(
+        self,
+        *,
+        cloud: str | None = None,
+        state_store: StateStore | None = None,
+        config_dir: str | None = None,
+    ) -> None: ...
+```
+
+**Description**: Wraps the three-phase pipeline (load config → connect/resolve → reconcile) in a single class. This is the primary entry point for both CLI and library usage.
+
+---
+
+#### TenantCtl.from_config_dir()
+
+```python
+@classmethod
+def from_config_dir(
+    cls,
+    config_dir: str,
+    *,
+    cloud: str | None = None,
+    state_store: StateStore | None = None,
+) -> TenantCtl:
+    """Create a TenantCtl backed by a YAML config directory."""
+```
+
+**Description**: Factory for YAML-based usage. When `state_store` is `None`, a `YamlFileStateStore` rooted at `<config_dir>/state` is created automatically.
+
+**Parameters**:
+- `config_dir`: Path to the configuration directory containing `defaults.yaml` and `projects/`
+- `cloud`: Named cloud from `clouds.yaml`, or `None` for the default cloud
+- `state_store`: Optional custom state store (defaults to `YamlFileStateStore`)
+
+**Example**:
+```python
+from src import TenantCtl
+
+client = TenantCtl.from_config_dir("config/")
+result = client.run(dry_run=True)
+```
+
+---
+
+#### TenantCtl.from_cloud()
+
+```python
+@classmethod
+def from_cloud(
+    cls,
+    cloud: str | None = None,
+    *,
+    state_store: StateStore | None = None,
+) -> TenantCtl:
+    """Create a TenantCtl for programmatic use (no config directory)."""
+```
+
+**Description**: Factory for programmatic/library usage where projects are supplied directly via `run(projects=..., all_projects=...)` rather than loaded from YAML. Use `InMemoryStateStore` for external state management.
+
+**Parameters**:
+- `cloud`: Named cloud from `clouds.yaml`, or `None` for the default cloud
+- `state_store`: Optional state store. Use `InMemoryStateStore` for programmatic use, or `None` when state tracking is not needed
+
+**Example**:
+```python
+from src import TenantCtl, ProjectConfig, InMemoryStateStore
+
+store = InMemoryStateStore()
+client = TenantCtl.from_cloud("mycloud", state_store=store)
+
+proj = ProjectConfig.build(name="dev", resource_prefix="dev",
+                           network={"subnet": {"cidr": "10.0.0.0/24"}})
+result = client.run(projects=[proj], all_projects=[proj])
+
+# Read updated state for write-back to external system
+state = store.snapshot()
+```
+
+---
+
+#### TenantCtl.run()
+
+```python
+def run(
+    self,
+    *,
+    project: str | None = None,
+    projects: list[ProjectConfig] | None = None,
+    all_projects: list[ProjectConfig] | None = None,
+    defaults: DefaultsConfig | None = None,
+    dry_run: bool = False,
+    offline: bool = False,
+    only: set[ReconcileScope] | None = None,
+    auto_expand_deps: bool = False,
+) -> RunResult:
+    """Execute the full provisioning pipeline."""
+```
+
+**Description**: Runs the three-phase pipeline (validate → connect → reconcile). Supports two modes:
+
+**YAML mode** (default): Loads projects from `config_dir`. Pass `project` to filter to a single project by name.
+
+**Direct-injection mode**: Pass `projects` and `all_projects` explicitly, bypassing YAML loading. Optionally pass `defaults`; when omitted an empty `DefaultsConfig()` is used.
+
+**Parameters**:
+- `project`: Single project name filter (YAML mode only)
+- `projects`: Pre-built list of projects to reconcile (direct mode)
+- `all_projects`: Complete project list for cross-project resolution (e.g., federation mapping)
+- `defaults`: Pipeline-level defaults (direct mode only; required for features like external network resolution)
+- `dry_run`: Preview planned actions without making changes
+- `offline`: Skip OpenStack connection (only meaningful with `dry_run=True`)
+- `only`: Restrict reconciliation to specific resource scopes. `None` (default) runs everything. Pass a set of `ReconcileScope` values to run only those handlers.
+- `auto_expand_deps`: When `False` (default), requesting a scope without its prerequisites raises `ValueError`. When `True`, missing prerequisites are added automatically (e.g. `{FIPS}` becomes `{FIPS, NETWORK}`). See [Scope Dependencies](#scope-dependencies).
+
+**Returns**: `RunResult` with actions, failed projects, and connection status.
+
+**Raises**:
+- `ConfigValidationError`: If configuration validation fails
+- `ProvisionerError`: If a pipeline phase fails or arguments are invalid
+
+**Argument constraints**:
+- `project` and `projects` are mutually exclusive
+- `projects` and `all_projects` must be provided together
+- `defaults` can only be used with `projects`/`all_projects`
+
+---
+
+## 4. Context Helpers (`src.context`)
+
+Helper functions for shared-resource resolution during Phase 2 (connect & resolve). Used internally by `TenantCtl._setup_context()` but available for advanced integrations.
+
+---
+
+### build_external_network_map()
+
+```python
+def build_external_network_map(
+    conn: openstack.connection.Connection,
+) -> dict[str, str]:
+    """Discover all external networks and build a name→id / id→id map."""
+```
+
+**Description**: Lists all networks with `router:external=True` and builds a dictionary mapping both network names and IDs to network IDs for O(1) lookup.
+
+**Returns**: Dictionary where keys are network names and IDs, values are network IDs.
+
+---
+
+### resolve_default_external_network()
+
+```python
+def resolve_default_external_network(
+    net_map: dict[str, str],
+    defaults: DefaultsConfig,
+) -> str:
+    """Pick the default external network from the pre-built map."""
+```
+
+**Description**: Resolves the default external network. If `defaults.external_network_name` is set, looks it up in the map. Otherwise auto-selects if exactly one external network exists.
+
+**Returns**: External network ID, or empty string if not resolvable.
+
+---
+
+### load_static_mapping_files()
+
+```python
+def load_static_mapping_files(
+    config_dir: str,
+    patterns: tuple[str, ...],
+) -> list:
+    """Load and concatenate static federation mapping rules from glob patterns."""
+```
+
+**Description**: Resolves glob patterns relative to `config_dir`, loads matched JSON files in sorted order, and concatenates their contents into a single rule list.
+
+**Returns**: Concatenated list of federation mapping rules, or empty list when `patterns` is empty.
+
+---
+
+### resolve_federation_context()
+
+```python
+def resolve_federation_context(
+    conn: openstack.connection.Connection,
+    config_dir: str | None,
+    defaults: DefaultsConfig,
+    all_projects: list[ProjectConfig],
+) -> tuple[list, bool, list]:
+    """Resolve federation mapping and static rules."""
+```
+
+**Description**: Resolves the current federation mapping from OpenStack and loads static mapping rules from config files.
+
+**Parameters**:
+- `conn`: OpenStack connection
+- `config_dir`: Path to config directory (`None` when projects are injected directly)
+- `defaults`: Pipeline-level defaults
+- `all_projects`: All loaded project configs
+
+**Returns**: `(current_mapping_rules, mapping_exists, static_mapping_rules)` tuple.
+
+**Raises**: `ProvisionerError` if static mapping file patterns are configured but `config_dir` is `None`.
+
+---
+
+## 5. Configuration Loading (`src.config_loader`)
 
 ### RawProject
 
@@ -344,7 +586,7 @@ def build_projects(
 def load_all_projects(
     config_dir: str,
     state_store: StateStore | None = None,
-) -> tuple[list[ProjectConfig], dict[str, Any]]:
+) -> tuple[list[ProjectConfig], DefaultsConfig]:
     """Load and validate all project configurations from *config_dir*."""
 ```
 
@@ -354,13 +596,13 @@ def load_all_projects(
 - `config_dir`: Path to configuration directory (e.g., `"config/"`)
 - `state_store`: Optional state store for loading observed state (FIP IDs, router IPs)
 
-**Returns**: Tuple of `(list_of_typed_project_configs, defaults_dict)` where projects are `ProjectConfig` instances.
+**Returns**: Tuple of `(list_of_typed_project_configs, defaults_config)` where projects are `ProjectConfig` instances and defaults is a `DefaultsConfig`.
 
 **Raises**: `ConfigValidationError` if any validation errors are found.
 
 ---
 
-## 4. Configuration Resolution (`src.config_resolver`)
+## 6. Configuration Resolution (`src.config_resolver`)
 
 ### PREDEFINED_RULES
 
@@ -424,7 +666,7 @@ def auto_populate_subnet_defaults(project: dict[str, Any]) -> None:
 
 ---
 
-## 5. Configuration Validation (`src.config_validator`)
+## 7. Configuration Validation (`src.config_validator`)
 
 ### ConfigValidationError
 
@@ -482,7 +724,47 @@ def check_cidr_overlaps(projects: list[ProjectConfig], errors: list[str]) -> Non
 
 ---
 
-## 6. State Store (`src.state_store`)
+### ProjectConfig.build()
+
+```python
+@classmethod
+def build(cls, data: dict[str, Any] | None = None, /, **kwargs: Any) -> ProjectConfig:
+    """Construct a validated ProjectConfig from a dict and/or keyword args."""
+```
+
+**Description**: Programmatic constructor for `ProjectConfig`. Merges `data` and `kwargs` (kwargs win), deep-copies to avoid mutating caller data, auto-populates defaults, validates, and returns a frozen `ProjectConfig`.
+
+**Auto-population**:
+- `domain_id`: Set to `"default"` if neither `domain_id` nor `domain` is provided
+- `gateway_ip`: Calculated from CIDR (first usable IP) if not specified
+- `allocation_pools`: Calculated from CIDR (all usable IPs except gateway) if not specified
+- Federation entry modes: Resolved from federation-level default
+
+**Returns**: Frozen `ProjectConfig` instance.
+
+**Raises**: `ConfigValidationError` on validation failure.
+
+**Example**:
+```python
+from src import ProjectConfig
+
+# Minimal — auto-populates subnet defaults and domain_id
+proj = ProjectConfig.build(
+    name="dev",
+    resource_prefix="dev",
+    network={"subnet": {"cidr": "10.0.0.0/24"}},
+)
+
+# From a dict with overrides
+proj = ProjectConfig.build(
+    {"name": "prod", "resource_prefix": "prod"},
+    network={"mtu": 9000, "subnet": {"cidr": "10.1.0.0/24"}},
+)
+```
+
+---
+
+## 8. State Store (`src.state_store`)
 
 ### Constants
 
@@ -536,7 +818,112 @@ class YamlFileStateStore:
 
 ---
 
-## 7. Orchestration (`src.reconciler`)
+### InMemoryStateStore
+
+```python
+class InMemoryStateStore:
+    def __init__(self, initial: dict[str, dict[str, Any]] | None = None) -> None: ...
+    def load(self, state_key: str) -> dict[str, Any]: ...
+    def save(self, state_key: str, key_path: list[str], value: Any) -> None: ...
+    def snapshot(self) -> dict[str, dict[str, Any]]: ...
+```
+
+**Description**: Dict-backed implementation of `StateStore` for programmatic/library use. No filesystem I/O — state lives in a plain `dict[str, dict]`. Pre-seed with `initial` to inject state loaded from an external system (CRM database, REST API, etc.). After reconciliation, call `snapshot()` to bulk-read all updated state for write-back.
+
+**Parameters**:
+- `initial`: Optional dict mapping state keys to state dicts (deep-copied on init)
+
+**Methods**:
+- `load(state_key)`: Return state for the key, or `{}` if not present. Returns a deep copy.
+- `save(state_key, key_path, value)`: Set a nested key inside the state. Creates intermediate dicts as needed. Raises `ValueError` if `key_path` is empty. Coerces enum values to their plain type.
+- `snapshot()`: Return a deep copy of all stored state, keyed by state key. Use after `TenantCtl.run()` to bulk-read reconciliation results.
+
+**Use case**: External state management — when state lives in a database, REST API, or CRM rather than YAML files on disk.
+
+**Example**:
+```python
+from src import TenantCtl, InMemoryStateStore
+
+# Pre-seed with state from external system
+store = InMemoryStateStore(initial={
+    "dev": {"preallocated_fips": [{"id": "abc", "address": "10.0.0.1"}]}
+})
+
+client = TenantCtl.from_cloud("mycloud", state_store=store)
+result = client.run(projects=[...], all_projects=[...])
+
+# Read updated state for write-back
+updated_state = store.snapshot()
+```
+
+---
+
+## 9. Orchestration (`src.reconciler`)
+
+### ReconcileScope
+
+```python
+class ReconcileScope(StrEnum):
+    """Selectable resource scopes for partial reconciliation."""
+
+    ROLES = "roles"
+    NETWORK = "network"
+    FIPS = "fips"
+    PREALLOC_NETWORK = "prealloc_network"
+    QUOTAS = "quotas"
+    SECURITY_GROUPS = "security_groups"
+    KEYSTONE_GROUPS = "keystone_groups"
+    FEDERATION = "federation"
+```
+
+**Description**: Enum controlling which resource handlers run during `present`-state reconciliation. When `None` is passed (the default), all handlers run. When a non-empty set is supplied, only the listed handlers execute.
+
+**Values**:
+- `ROLES`: Group role assignments (`ensure_group_role_assignments`)
+- `NETWORK`: Network stack + router IP tracking (`ensure_network_stack`, `track_router_ips`)
+- `FIPS`: Floating IP pre-allocation (`ensure_preallocated_fips`)
+- `PREALLOC_NETWORK`: Pre-allocated network quota (`ensure_preallocated_network`)
+- `QUOTAS`: Compute/network/storage quotas (`ensure_quotas`)
+- `SECURITY_GROUPS`: Baseline security group (`ensure_baseline_sg`)
+- `KEYSTONE_GROUPS`: Keystone group lifecycle (`ensure_keystone_groups`)
+- `FEDERATION`: Federation mapping (`ensure_federation_mapping`)
+
+**Note**: `ensure_project()`, preflight checks, and metadata persistence always run regardless of scopes. Unshelve is suppressed when scopes are set (it is a state transition, not a resource update). `locked` and `absent` states always run their full pipeline.
+
+---
+
+### Scope Dependencies
+
+Some scopes have **prerequisites** — requesting them without their dependency will fail at runtime with confusing SDK errors. TenantCtl enforces these statically:
+
+| Scope | Requires | Why |
+|-------|----------|-----|
+| `FIPS` | `NETWORK` | FIP allocation needs the router to exist |
+| `PREALLOC_NETWORK` | `NETWORK` | Quota enforcement assumes network created |
+| `ROLES` | `KEYSTONE_GROUPS` | Groups must exist before role assignment |
+
+By default, missing prerequisites raise `ValueError`. Pass `auto_expand_deps=True` to `TenantCtl.run()` (or `--auto-deps` on the CLI) to auto-include them instead.
+
+---
+
+### validate_scopes()
+
+```python
+def validate_scopes(
+    scopes: set[ReconcileScope] | None,
+    *,
+    auto_expand_deps: bool = False,
+) -> set[ReconcileScope] | None:
+    """Normalize, validate, and optionally expand a scope set."""
+```
+
+**Description**: Returns `None` unchanged (meaning "all scopes"). A non-empty set is returned with every element coerced to `ReconcileScope` (so callers may pass plain strings). Raises `ValueError` on empty sets, unknown values, or missing prerequisites (when `auto_expand_deps=False`).
+
+**Parameters**:
+- `scopes`: Scope set to validate, or `None` for "all scopes"
+- `auto_expand_deps`: When `False` (default), missing prerequisite scopes raise `ValueError`. When `True`, prerequisites are added automatically with an INFO-level log message.
+
+---
 
 ### reconcile()
 
@@ -545,6 +932,8 @@ def reconcile(
     projects: list[ProjectConfig],
     all_projects: list[ProjectConfig],
     ctx: SharedContext,
+    *,
+    scopes: set[ReconcileScope] | None = None,
 ) -> list[Action]:
     """Phase 3: per-project resources, then shared federation mapping."""
 ```
@@ -555,6 +944,7 @@ def reconcile(
 - `projects`: List of `ProjectConfig` instances to provision (may be filtered by `--project` flag)
 - `all_projects`: Full list of all `ProjectConfig` instances (used for federation mapping)
 - `ctx`: SharedContext with OpenStack connection and shared state
+- `scopes`: Optional set of `ReconcileScope` values. When `None` (default), all handlers run. When a non-empty set, only the listed resource handlers execute during `present`-state reconciliation.
 
 **Returns**: List of all Action objects (same as `ctx.actions`)
 
@@ -577,23 +967,24 @@ def reconcile(
 
 ### Project State Handlers
 
-The reconciler dispatches to different handler functions based on `cfg["state"]`:
+The reconciler dispatches to different handler functions based on `cfg.state` using inline `if/elif/else`. The `present` handler accepts a `scopes` keyword argument; `locked` and `absent` always run their full pipeline.
 
 ```python
-_STATE_HANDLERS: dict[str, StateHandler] = {
-    "present": _reconcile_present,
-    "locked": _reconcile_locked,
-    "absent": _reconcile_absent,
-}
+if state == "present":
+    _reconcile_present(cfg, ctx, scopes=scopes)
+elif state == "locked":
+    _reconcile_locked(cfg, ctx)
+elif state == "absent":
+    _reconcile_absent(cfg, ctx)
 ```
 
 ---
 
 #### State: `present` (Default)
 
-**Function**: `_reconcile_present(cfg: ProjectConfig, ctx: SharedContext)` (internal)
+**Function**: `_reconcile_present(cfg: ProjectConfig, ctx: SharedContext, *, scopes: set[ReconcileScope] | None = None)` (internal)
 
-**Purpose**: Full provisioning of all resources + unshelve any previously shelved servers.
+**Purpose**: Full provisioning of all resources + unshelve any previously shelved servers. When `scopes` is `None`, every handler runs. When a non-empty set is supplied, only the listed resource handlers execute. `ensure_project()`, preflight checks, and metadata persistence always run. Unshelve is suppressed when scopes are set.
 
 **Resource Pipeline** (executed sequentially):
 1. `ensure_project()` — Create/update project, set `ctx.current_project_id`
@@ -655,7 +1046,7 @@ _STATE_HANDLERS: dict[str, StateHandler] = {
 
 ---
 
-## 8. Resource Modules (`src.resources.*`)
+## 10. Resource Modules (`src.resources.*`)
 
 All resource modules follow the **universal resource pattern**: check `dry_run` → find existing → create/update/skip → return Action.
 
@@ -1074,7 +1465,7 @@ def ensure_preallocated_network(
 
 ---
 
-## 9. CLI Entry Point (`src.main`)
+## 11. CLI Entry Point (`src.main`)
 
 ### main()
 
@@ -1083,19 +1474,20 @@ def main(argv: list[str] | None = None) -> int:
     """Main entry point. Returns 0 on success, 1 on failure."""
 ```
 
+**Description**: Thin CLI adapter. Parses arguments, creates a `TenantCtl.from_config_dir()` instance, calls `run()`, and prints the summary. All pipeline logic lives in `TenantCtl`.
+
 **CLI Arguments**:
 - `--config-dir`: Path to config directory (default: `config/`)
 - `--os-cloud`: Named cloud from `clouds.yaml`
 - `--project`: Filter to a single project name
 - `--dry-run`: Preview planned actions with live cloud reads (field-level diffs), no writes
 - `--offline`: Skip cloud connection in dry-run (use with `--dry-run` for connectionless preview)
+- `--only SCOPE [SCOPE ...]`: Restrict reconciliation to specific resource scopes (e.g., `--only quotas network`)
+- `--auto-deps`: Auto-expand `--only` scopes to include prerequisite scopes (e.g., `--only fips --auto-deps` adds `network` automatically)
 - `-v` / `--verbose`: Increase verbosity (repeat for more: `-v`=INFO, `-vv`=DEBUG)
 - `--version`: Show version and exit
 
-**Three-Phase Execution**:
-1. **Phase 1 — Validate**: Load config, deep-merge, resolve, validate (raises `ConfigValidationError` on failure)
-2. **Phase 2 — Connect**: Create OpenStack connection, resolve external network, load federation mapping (skipped only in `--offline` mode; runs normally in `--dry-run` to enable live reads)
-3. **Phase 3 — Reconcile**: Call `reconcile()` for all (or filtered) projects
+**Delegation**: Creates `TenantCtl.from_config_dir(args.config_dir, cloud=args.os_cloud)` and calls `client.run(project=args.project, dry_run=args.dry_run, offline=args.offline, only=only, auto_expand_deps=args.auto_deps)`. The three-phase pipeline (validate → connect → reconcile) is orchestrated by `TenantCtl.run()`.
 
 **Returns**: `0` on success, `1` if any projects failed or a phase error occurred.
 
@@ -1112,9 +1504,19 @@ Calls `main()` and passes the return code to `sys.exit()`. Registered as the `te
 
 ---
 
-## 10. Creating New Resource Types
+## 12. Creating New Resource Types
 
-To add a new resource type, follow the **universal resource pattern**:
+To add a new resource type, follow the **universal resource pattern**.
+
+### Execution Modes
+
+Handlers must support three execution modes:
+
+| Mode | `ctx.conn` | `ctx.dry_run` | Behavior |
+|------|------------|---------------|----------|
+| **Offline** | `None` | Any | Skip API calls, return SKIPPED actions |
+| **Online Dry-Run** | Set | `True` | Read state, compute diff, don't write |
+| **Normal** | Set | `False` | Create/update resources |
 
 ### Template
 
@@ -1124,8 +1526,8 @@ To add a new resource type, follow the **universal resource pattern**:
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from src.models import ProjectConfig
 from src.utils import Action, ActionStatus, SharedContext, retry
 
 logger = logging.getLogger(__name__)
@@ -1144,23 +1546,63 @@ def _create_resource(conn, name: str, project_id: str, **config):
 
 
 def ensure_resource(
-    cfg: dict[str, Any],
+    cfg: ProjectConfig,
     project_id: str,
     ctx: SharedContext,
 ) -> Action:
     """Ensure resource exists with correct configuration."""
-    resource_name = f"{cfg['resource_prefix']}-resource"
+    resource_name = f"{cfg.resource_prefix}-resource"
 
-    if ctx.dry_run:
-        return ctx.record(ActionStatus.SKIPPED, "resource_type", resource_name, "dry-run")
+    # 1. Offline mode: no connection available
+    if ctx.conn is None:
+        return ctx.record(ActionStatus.SKIPPED, "resource_type", resource_name,
+                          "would create resource (offline)")
 
     existing = _find_resource(ctx.conn, resource_name, project_id)
 
+    # 2. Dry-run: compute what would change without writing
+    if ctx.dry_run:
+        if existing is None:
+            return ctx.record(ActionStatus.CREATED, "resource_type", resource_name,
+                              "would create")
+        return ctx.record(ActionStatus.SKIPPED, "resource_type", resource_name,
+                          "already exists")
+
+    # 3. Normal mode: create or skip
     if existing is None:
         resource = _create_resource(ctx.conn, resource_name, project_id)
-        return ctx.record(ActionStatus.CREATED, "resource_type", resource_name, f"id={resource.id}")
+        return ctx.record(ActionStatus.CREATED, "resource_type", resource_name,
+                          f"id={resource.id}")
 
-    return ctx.record(ActionStatus.SKIPPED, "resource_type", resource_name, "already exists")
+    return ctx.record(ActionStatus.SKIPPED, "resource_type", resource_name,
+                      "already exists")
+```
+
+### Error Handling
+
+**Optional services** — handle `EndpointNotFound` gracefully when a service (e.g. Octavia) may not be deployed:
+
+```python
+from openstack.exceptions import EndpointNotFound
+
+try:
+    ctx.conn.load_balancer.set_quotas(project_id, **kwargs)
+except EndpointNotFound:
+    logger.warning("Load balancer service not available, skipping")
+    return ctx.record(ActionStatus.SKIPPED, "lb_quotas", cfg.name,
+                      "service not available")
+```
+
+**Per-resource isolation** — when processing multiple items, catch and record individual failures so others still proceed:
+
+```python
+for item in items:
+    try:
+        create_resource(ctx.conn, item.name, project_id)
+        actions.append(ctx.record(ActionStatus.CREATED, "item", item.name))
+    except Exception as exc:
+        logger.warning("Failed to create %s: %s", item.name, exc)
+        actions.append(ctx.record(ActionStatus.FAILED, "item", item.name, str(exc)))
 ```
 
 ### Integration Steps
@@ -1171,11 +1613,23 @@ def ensure_resource(
 
 3. **Add to pipeline**: Add function call to `_reconcile_present()` in the appropriate position
 
-4. **Add configuration schema**: Document config fields in [CONFIG-SCHEMA.md](CONFIG-SCHEMA.md)
+4. **Add scope** (if applicable): Add a `ReconcileScope` enum value and update `_SCOPE_DEPENDENCIES` if the new handler depends on another scope
 
-5. **Write tests**: Create test file in `tests/`
+5. **Add configuration schema**: Document config fields in [CONFIG-SCHEMA.md](CONFIG-SCHEMA.md)
 
-6. **Add validation**: If new config fields are needed, add validation to `src/config_validator.py`
+6. **Write tests**: Create test file in `tests/`
+
+7. **Add validation**: If new config fields are needed, add validation to `src/config_validator.py`
+
+### Checklist
+
+- [ ] Handles offline mode (`ctx.conn is None`)
+- [ ] Supports dry-run mode (`ctx.dry_run is True`)
+- [ ] Uses `@retry()` on API calls
+- [ ] Records actions with `ctx.record()`
+- [ ] Respects pipeline ordering (see [Project State Handlers](#project-state-handlers))
+- [ ] Handles missing services gracefully (`EndpointNotFound`)
+- [ ] Idempotent (safe to re-run)
 
 ---
 

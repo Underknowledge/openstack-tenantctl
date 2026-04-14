@@ -19,6 +19,7 @@ Each decision includes:
 - [DD-001: Three-Phase Execution Model](#dd-001-three-phase-execution-model)
 - [DD-012: Project Lifecycle State Machine](#dd-012-project-lifecycle-state-machine)
 - [DD-013: Teardown & Reverse Dependency Order](#dd-013-teardown--reverse-dependency-order)
+- [DD-025: Library Layer Architecture](#dd-025-library-layer-architecture)
 
 ### Configuration & Merging
 - [DD-003: Deep-Merge Configuration Inheritance](#dd-003-deep-merge-configuration-inheritance)
@@ -481,9 +482,11 @@ We created a `SharedContext` dataclass that bundles all cross-cutting concerns:
 ```python
 @dataclass
 class SharedContext:
-    conn: openstack.connection.Connection
+    conn: openstack.connection.Connection | None = None
     dry_run: bool = False
     external_net_id: str = ""
+    external_subnet_id: str = ""
+    external_network_map: dict[str, str] = field(default_factory=dict)
     current_mapping_rules: list[Any] = field(default_factory=list)
     mapping_exists: bool = False
     static_mapping_rules: list[Any] = field(default_factory=list)
@@ -493,9 +496,12 @@ class SharedContext:
     current_project_name: str = ""
     state_store: StateStore | None = None  # DD-018
 
-    def record(self, status, resource_type, name, details="") -> Action:
+    def record(self, status, resource_type, name, details="",
+               project_id=None, project_name=None) -> Action:
         """Record an action and return it."""
-        action = Action(status, resource_type, name, details)
+        action = Action(status, resource_type, name, details,
+                        project_id=project_id or self.current_project_id,
+                        project_name=project_name or self.current_project_name)
         self.actions.append(action)
         return action
 ```
@@ -565,7 +571,7 @@ We implement **per-project error isolation** in the reconciler:
 
 ```python
 for cfg in projects:
-    project_name = cfg["name"]
+    project_name = cfg.name
     try:
         _reconcile_project(cfg, ctx)
     except Exception:
@@ -1046,24 +1052,21 @@ We implement a **three-state lifecycle model** with dedicated reconciliation han
 - Revoke all group role assignments before resource deletion
 - Delete resources: FIPs → snapshots → router interfaces → routers → subnets → networks → security groups → project
 
-**Our state dispatch mechanism** (`src/reconciler.py` lines 129-162):
+**Our state dispatch mechanism** (`src/reconciler.py`):
 ```python
-_STATE_HANDLERS: dict[str, StateHandler] = {
-    "present": _reconcile_present,
-    "locked": _reconcile_locked,
-    "absent": _reconcile_absent,
-}
-
 for cfg in projects:
-    state: str = cfg.get("state", "present")
-    handler = _STATE_HANDLERS.get(state)
-    if handler is None:
-        # Log error, continue with next project
-    try:
-        handler(cfg, ctx)
-    except Exception:
-        # Per-project error isolation
+    state = cfg.state
+    if state == "present":
+        _reconcile_present(cfg, ctx, scopes=scopes)
+    elif state == "locked":
+        _reconcile_locked(cfg, ctx)
+    elif state == "absent":
+        _reconcile_absent(cfg, ctx)
+    else:
+        logger.error("Unknown state %r for project %s", state, project_name)
 ```
+
+Note: The original design used a `_STATE_HANDLERS` dict for dispatch. The implementation now uses inline `if/elif/else` to support the `scopes` keyword argument on the `present` handler. `locked` and `absent` always run their full pipeline.
 
 **State validation** (`src/config_loader.py` line 25):
 ```python
@@ -2599,6 +2602,73 @@ Resolution happens at config load time via `_resolve_federation_entry_modes()`, 
 
 ---
 
+## DD-025: Library Layer Architecture
+
+**Status**: Accepted
+
+**Date**: 2026-04-15
+
+### Context
+
+Having a library layer was an early goal. We built CLI/YAML first to understand requirements, what patterns emerged when provisioning multiple projects? What configuration inheritance made sense? This exploration informed the library design.
+
+Platform teams need programmatic access for integrations, REST APIs, and CI/CD tooling. A library API makes the patterns we discovered (deep-merge config, three-phase execution, error isolation, state tracking) reusable. Users could call `openstacksdk` directly, but would need to rebuild these patterns themselves.
+
+### Decision
+
+Introduce a `TenantCtl` class (`src/client.py`) as the library entry point, wrapping the three-phase pipeline. The CLI (`main.py`) becomes a thin adapter that parses arguments and delegates to `TenantCtl`.
+
+**Key design choices**:
+
+1. **Dual-mode `run()` method**: Supports both YAML mode (loads from `config_dir`) and direct-injection mode (caller passes `ProjectConfig` objects directly). This avoids forcing library users to create YAML files on disk.
+
+2. **`ProjectConfig.build()` factory**: Programmatic constructor that auto-populates subnet defaults, domain ID, and federation entry modes — the same expansion that the YAML pipeline performs. Library users get the same validation guarantees as CLI users.
+
+3. **`InMemoryStateStore`**: Dict-backed `StateStore` implementation for library use. Pre-seed with state from external systems, run the pipeline, then call `snapshot()` to bulk-read updated state for write-back. No filesystem dependency.
+
+4. **Context extraction** (`src/context.py`): External network discovery and federation resolution extracted from `main.py` into reusable helpers. Used by `TenantCtl._setup_context()` but available independently for advanced integrations.
+
+5. **Public API surface** (`src/__init__.py`): Re-exports `TenantCtl`, `RunResult`, `ProjectConfig`, `DefaultsConfig`, `StateStore` variants, `Action`, `ActionStatus`, `ProvisionerError`, and `ConfigValidationError` with an explicit `__all__`.
+
+### Rationale
+
+**Separation of concerns**: CLI concerns (argparse, output formatting, exit codes) don't belong in the library API. A clean boundary makes the pipeline testable without subprocess spawning.
+
+**Two valid use cases**: YAML-based CLI usage (operators) and programmatic injection (platform teams). Both need the same pipeline — validate, connect, reconcile — but with different data sources. The dual-mode `run()` method serves both without code duplication.
+
+**State store abstraction**: Library users often manage state externally (database, CRM). `InMemoryStateStore` bridges the gap: the pipeline writes state the same way it always has, but the backing store is a dict the caller controls.
+
+**Incremental adoption**: Existing CLI behavior is unchanged. `main.py` now does less, not more. Library users can start with `from_config_dir()` (same as CLI) and graduate to `from_cloud()` with direct injection when ready.
+
+### Alternatives Considered
+
+**Alternative 1: Expose `reconcile()` directly** as the library API.
+- **Rejected**: Too low-level. Callers would need to manually load configs, build `SharedContext`, resolve external networks, manage connections, and handle cleanup. Error-prone and would duplicate CLI logic.
+
+**Alternative 2: Make `ConfigSource` the primary API** — require library users to implement `ConfigSource` for their backend.
+- **Rejected**: `ConfigSource` is about config *loading*, not pipeline orchestration. A CRM integration that already has `ProjectConfig` objects shouldn't need to wrap them in a fake config source just to run the pipeline.
+
+**Alternative 3: Expose `main()` with argument injection** — pass `argv` lists programmatically.
+- **Rejected**: Forces string-based argument passing, stdout parsing, and sys.exit handling. Fundamentally the wrong abstraction for library use.
+
+### Consequences
+
+**Positive**:
+- Clean library API: `TenantCtl.from_cloud(...).run(projects=[...])` — one line to provision
+- `ProjectConfig.build()` gives library users the same validation as YAML users
+- `InMemoryStateStore` enables stateless pipeline runs with external state management
+- `RunResult` provides structured access to actions and failures (no stdout parsing)
+- `main.py` simplified to ~40 lines of argument parsing and delegation
+
+**Negative**:
+- Two new modules (`client.py`, `context.py`) to maintain
+- `run()` has two code paths (YAML vs direct injection) with argument validation overhead
+- Library users must understand the `projects` vs `all_projects` distinction for federation
+
+**See Also**: DD-001 (Three-Phase Execution), DD-006 (SharedContext), DD-018 (Separate State File), DD-022 (File-Locking)
+
+---
+
 ## Summary Table
 
 | ID | Decision | Impact | Related |
@@ -2627,6 +2697,7 @@ Resolution happens at config load time via `_resolve_federation_entry_modes()`, 
 | DD-022 | File-Locking for State Store Concurrency | Medium - Data safety | DD-018 |
 | DD-023 | Human-Readable Quota Units | Low - User experience | - |
 | DD-024 | Group-Based Federation Mapping Mode | Medium - Federation flexibility | DD-003, DD-008, DD-010, DD-016 |
+| DD-025 | Library Layer Architecture | High - Core architecture | DD-001, DD-006, DD-018, DD-022 |
 
 ---
 

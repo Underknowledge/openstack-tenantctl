@@ -98,6 +98,8 @@ The provisioner follows a **three-phase execution model**:
 └──────────────────────────────────────────────────┘
 ```
 
+The `TenantCtl` class orchestrates these three phases. The CLI (`main.py`) is a thin adapter that delegates to `TenantCtl`; for programmatic use, import `TenantCtl` directly.
+
 **Detailed architecture**: [SPECIFICATION.md § Architecture](SPECIFICATION.md#2-architecture)
 
 **Why this design**: [DESIGN-DECISIONS.md § DD-001](DESIGN-DECISIONS.md#dd-001-three-phase-execution-model)
@@ -156,6 +158,8 @@ Options:
   --os-cloud NAME      Named cloud from clouds.yaml
   --project NAME       Provision only specified project
   --dry-run            Preview actions without making changes
+  --offline            Skip OpenStack connection (use with --dry-run)
+  --only SCOPE [...]   Restrict reconciliation to specific resource scopes
   -v, --verbose        Increase verbosity (-v=INFO, -vv=DEBUG)
   --help               Show help message
 ```
@@ -465,7 +469,7 @@ You want to understand the codebase or add features.
 Key sections:
 - [Core Design Patterns](SPECIFICATION.md#3-core-design-patterns)
 - [Core Types](API-REFERENCE.md#1-core-types-srcutils)
-- [Creating New Resource Types](API-REFERENCE.md#6-creating-new-resource-types)
+- [Creating New Resource Types](API-REFERENCE.md#12-creating-new-resource-types)
 
 ### Architects
 
@@ -486,12 +490,15 @@ Key sections:
 
 ```
 src/
-├── main.py                    # CLI entry point, 3-phase orchestration
+├── __init__.py                # Public API re-exports with __all__
+├── client.py                  # Library API: TenantCtl class, RunResult
+├── context.py                 # Context-building helpers (external networks, federation)
+├── main.py                    # Thin CLI adapter delegating to TenantCtl
 ├── config_loader.py           # Load & deep-merge YAML configs
 ├── config_resolver.py         # Resolve CIDR pools, gateway IPs
 ├── config_validator.py        # Comprehensive validation
 ├── reconciler.py              # Per-project state-dependent dispatch
-├── state_store.py             # Persistent state tracking (FIP IDs, etc.)
+├── state_store.py             # Persistent state tracking (YamlFileStateStore, InMemoryStateStore)
 ├── utils.py                   # Action, SharedContext, retry decorator
 └── resources/
     ├── project.py             # Project creation/update
@@ -510,6 +517,13 @@ src/
 
 ### Key Abstractions
 
+**TenantCtl** — Library entry point wrapping the three-phase pipeline:
+- YAML mode: `TenantCtl.from_config_dir("config/").run(dry_run=True)`
+- Programmatic mode: `TenantCtl.from_cloud(...)` with `ProjectConfig.build()` and direct injection
+
+**RunResult** — Structured result from `TenantCtl.run()`:
+- `actions`, `failed_projects`, `had_connection`
+
 **Universal Resource Pattern** — Every resource module follows the same flow:
 ```
 check dry_run → find existing → create/update/skip → return Action
@@ -520,7 +534,7 @@ check dry_run → find existing → create/update/skip → return Action
 Action(status=CREATED|UPDATED|SKIPPED|FAILED, resource_type, name, details)
 ```
 
-**SharedContext** — Cross-cutting state holder:
+**SharedContext** — Cross-cutting state holder (internal):
 - OpenStack connection, current project, action history, state store
 
 **@retry()** — Decorator on all OpenStack API helpers:
@@ -532,25 +546,41 @@ Action(status=CREATED|UPDATED|SKIPPED|FAILED, resource_type, name, details)
 
 ## Library Usage
 
-TenantCtl can be imported and used programmatically. The `ConfigSource` protocol lets you plug in any configuration backend, and the reconciliation engine does the rest:
+TenantCtl can be imported and used programmatically via the `TenantCtl` class, which wraps the full three-phase pipeline.
+
+### YAML mode — use existing config directory
 
 ```python
-from src.config_loader import YamlConfigSource, load_and_validate
-from src.utils import SharedContext
-from src.reconciler import reconcile
+from src import TenantCtl
 
-# Load and validate config from YAML (or implement ConfigSource for your own backend)
-source = YamlConfigSource("config/")
-projects, all_projects = load_and_validate(source)
+client = TenantCtl.from_config_dir("config/")
+result = client.run(dry_run=True)
 
-# Build context with an OpenStack connection
-ctx = SharedContext(conn=my_connection)
-
-# Reconcile — returns a list of actions taken
-actions = reconcile(projects, all_projects, ctx)
+print(f"{len(result.actions)} actions, {len(result.failed_projects)} failures")
 ```
 
-The `ConfigSource` protocol requires only two methods — `load_defaults()` and `load_raw_projects()` — making it straightforward to back tenantctl with a REST API, database, or any other source. See [API-REFERENCE.md](API-REFERENCE.md) for full details.
+### Programmatic mode — inject projects directly
+
+```python
+from src import TenantCtl, ProjectConfig, InMemoryStateStore
+
+# Build projects programmatically (auto-populates subnet defaults, domain_id)
+proj = ProjectConfig.build(
+    name="dev",
+    resource_prefix="dev",
+    network={"subnet": {"cidr": "10.0.0.0/24"}},
+)
+
+# Use InMemoryStateStore for external state management (database, REST API)
+store = InMemoryStateStore()
+client = TenantCtl.from_cloud("mycloud", state_store=store)
+result = client.run(projects=[proj], all_projects=[proj])
+
+# Read updated state for write-back to external system
+updated_state = store.snapshot()
+```
+
+The `ConfigSource` protocol still exists for custom configuration backends — implement `load_defaults()` and `load_raw_projects()` to back tenantctl with a REST API, database, or any other source. See [API-REFERENCE.md](API-REFERENCE.md) for full details.
 
 ---
 
@@ -609,7 +639,7 @@ Version bumps run quality checks (fmt, lint, test) before proceeding. After bump
 4. Write comprehensive tests
 5. Document in [CONFIG-SCHEMA.md](CONFIG-SCHEMA.md)
 
-**Template and guide**: [API-REFERENCE.md § Creating New Resource Types](API-REFERENCE.md#6-creating-new-resource-types)
+**Template and guide**: [API-REFERENCE.md § Creating New Resource Types](API-REFERENCE.md#12-creating-new-resource-types)
 
 ---
 

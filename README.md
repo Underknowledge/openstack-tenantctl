@@ -74,7 +74,7 @@ Run it again — nothing changes:
 ---
 ### Project Status
 
-TenantCtl is designed for dual use: run it as a **standalone CLI** that you can already use for day-to-day operations, or **as a Python library** to embed provisioning in your own tooling. The [`ConfigSource`](docs/API-REFERENCE.md) protocol means configuration can come from anywhere — YAML files today, a REST API or database tomorrow — provisioning logic untouched.
+TenantCtl is designed for dual use: run it as a **standalone CLI** that you can already use for day-to-day operations, or **as a Python library** via the [`TenantCtl`](docs/API-REFERENCE.md#3-library-api-srcclient) class to embed provisioning in your own tooling. Build projects programmatically with `ProjectConfig.build()`, manage state with `InMemoryStateStore`, and integrate the full pipeline into other systems, REST APIs, or custom dashboards. The [`ConfigSource`](docs/API-REFERENCE.md) protocol means YAML configuration can be swapped for any backend — provisioning logic untouched.
 
 The core provisioning engine is tested against OpenStack deployments. The config format and CLI interface may still change while the project is young. If you depend on this, simply star the repo and let me know how you use it, and I'll freeze the interface for you.
 

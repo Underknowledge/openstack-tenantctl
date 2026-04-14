@@ -2,13 +2,75 @@
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from src.models import ProjectConfig
 from src.state_store import StateStore
 from src.utils import SharedContext
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+@pytest.fixture
+def mock_config_dir(tmp_path: Path) -> Path:
+    """Create a temporary config directory with minimal valid configs."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    projects_dir = config_dir / "projects"
+    projects_dir.mkdir()
+
+    # Create defaults.yaml with network.subnet structure
+    defaults = {
+        "quotas": {"compute": {"cores": 10}},
+        "network": {
+            "subnet": {
+                "cidr": "192.168.1.0/24",
+                "gateway_ip": "192.168.1.254",
+                "allocation_pools": [{"start": "192.168.1.1", "end": "192.168.1.253"}],
+            },
+        },
+    }
+    (config_dir / "defaults.yaml").write_text(yaml.dump(defaults))
+
+    # Create project1.yaml in projects/ subdirectory
+    project1 = {
+        "name": "project1",
+        "resource_prefix": "proj1",
+        "network": {
+            "subnet": {
+                "cidr": "10.0.1.0/24",
+                "gateway_ip": "10.0.1.254",
+                "allocation_pools": [{"start": "10.0.1.1", "end": "10.0.1.253"}],
+            },
+        },
+    }
+    (projects_dir / "project1.yaml").write_text(yaml.dump(project1))
+
+    # Create project2.yaml in projects/ subdirectory
+    project2 = {
+        "name": "project2",
+        "resource_prefix": "proj2",
+        "network": {
+            "subnet": {
+                "cidr": "10.0.2.0/24",
+                "gateway_ip": "10.0.2.254",
+                "allocation_pools": [{"start": "10.0.2.1", "end": "10.0.2.253"}],
+            },
+        },
+    }
+    (projects_dir / "project2.yaml").write_text(yaml.dump(project2))
+
+    # Create federation_static.json
+    static_rules: list[Any] = []
+    (config_dir / "federation_static.json").write_text(json.dumps(static_rules))
+
+    return config_dir
 
 
 @pytest.fixture(autouse=True)

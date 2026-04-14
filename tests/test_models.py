@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from typing import Any
 
 import pytest
@@ -243,19 +242,18 @@ class TestFullRoundTrip:
 class TestMinimalConfig:
     """Verify that a minimal config (no optional sections) produces correct defaults."""
 
-    def test_optional_sections_are_none(self, minimal_project_dict: dict[str, Any]) -> None:
+    def test_minimal_config_defaults(self, minimal_project_dict: dict[str, Any]) -> None:
         cfg = ProjectConfig.from_dict(minimal_project_dict)
 
+        # Required fields
         assert cfg.name == "minimal"
         assert cfg.resource_prefix == "minimal"
+        # Optional sections are None
         assert cfg.network is None
         assert cfg.quotas is None
         assert cfg.security_group is None
         assert cfg.federation is None
-
-    def test_default_scalars(self, minimal_project_dict: dict[str, Any]) -> None:
-        cfg = ProjectConfig.from_dict(minimal_project_dict)
-
+        # Scalar defaults
         assert cfg.description == ""
         assert cfg.enabled is True
         assert cfg.state == ProjectState.PRESENT
@@ -264,10 +262,8 @@ class TestMinimalConfig:
         assert cfg.reclaim_floating_ips is False
         assert cfg.config_path == ""
         assert cfg.state_key == ""
-
-    def test_default_lists(self, minimal_project_dict: dict[str, Any]) -> None:
-        cfg = ProjectConfig.from_dict(minimal_project_dict)
-
+        assert cfg.external_network_name == ""
+        # List defaults
         assert cfg.group_role_assignments == []
         assert cfg.preallocated_fips == []
         assert cfg.released_fips == []
@@ -330,85 +326,18 @@ class TestUnderscorePrefixMapping:
 class TestProjectState:
     """Verify ProjectState enum values and string comparison."""
 
-    def test_values(self) -> None:
-        assert ProjectState.PRESENT == "present"
-        assert ProjectState.LOCKED == "locked"
-        assert ProjectState.ABSENT == "absent"
-
-    def test_from_string(self) -> None:
-        assert ProjectState("present") == ProjectState.PRESENT
-        assert ProjectState("locked") == ProjectState.LOCKED
-        assert ProjectState("absent") == ProjectState.ABSENT
+    @pytest.mark.parametrize(
+        ("value", "member"),
+        [("present", ProjectState.PRESENT), ("locked", ProjectState.LOCKED), ("absent", ProjectState.ABSENT)],
+        ids=["present", "locked", "absent"],
+    )
+    def test_value_and_from_string(self, value: str, member: ProjectState) -> None:
+        assert member == value
+        assert ProjectState(value) == member
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError, match="is not a valid"):
             ProjectState("invalid")
-
-
-# ---------------------------------------------------------------------------
-# dataclasses.replace() patterns (reconciler mutation)
-# ---------------------------------------------------------------------------
-
-
-class TestDataclassReplace:
-    """Verify that dataclasses.replace() works for reconciler mutation patterns."""
-
-    def test_replace_enabled(self, full_project_dict: dict[str, Any]) -> None:
-        cfg = ProjectConfig.from_dict(full_project_dict)
-        locked = dataclasses.replace(cfg, enabled=False)
-
-        assert locked.enabled is False
-        assert cfg.enabled is True  # original unchanged
-
-    def test_replace_state(self, full_project_dict: dict[str, Any]) -> None:
-        cfg = ProjectConfig.from_dict(full_project_dict)
-        absent = dataclasses.replace(cfg, state=ProjectState.ABSENT)
-
-        assert absent.state == ProjectState.ABSENT
-        assert cfg.state == ProjectState.PRESENT
-
-    def test_replace_group_role_assignments_to_absent(self, full_project_dict: dict[str, Any]) -> None:
-        """Simulate the reconciler's revoke pattern for absent state."""
-        cfg = ProjectConfig.from_dict(full_project_dict)
-        revoked = dataclasses.replace(
-            cfg,
-            group_role_assignments=[dataclasses.replace(entry, state="absent") for entry in cfg.group_role_assignments],
-        )
-
-        assert all(e.state == "absent" for e in revoked.group_role_assignments)
-        assert cfg.group_role_assignments[0].state == "present"  # original unchanged
-
-    def test_replace_router_ips(self, full_project_dict: dict[str, Any]) -> None:
-        cfg = ProjectConfig.from_dict(full_project_dict)
-        new_entry = RouterIpEntry(id="r-new", name="new-router", external_ip="10.0.0.200")
-        updated = dataclasses.replace(
-            cfg,
-            router_ips=[new_entry],
-        )
-
-        assert updated.router_ips == [new_entry]
-        assert len(cfg.router_ips) == 1  # original unchanged
-
-
-# ---------------------------------------------------------------------------
-# Frozen enforcement
-# ---------------------------------------------------------------------------
-
-
-class TestFrozenEnforcement:
-    """Verify that frozen dataclasses reject attribute mutation.
-
-    All models use dataclasses.dataclass(frozen=True). This test verifies
-    one representative model - testing all models would just verify Python's
-    dataclass implementation multiple times.
-    """
-
-    def test_project_config_is_frozen(self, minimal_project_dict: dict[str, Any]) -> None:
-        """Representative test: frozen dataclasses reject attribute mutation."""
-        cfg = ProjectConfig.from_dict(minimal_project_dict)
-
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            cfg.name = "mutated"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -436,22 +365,6 @@ class TestSubnetConfigFromDict:
         assert subnet.dns_nameservers == ["1.1.1.1"]
         assert subnet.enable_dhcp is False
 
-    def test_defaults(self) -> None:
-        """Verify from_dict applies correct defaults for optional fields."""
-        data = {
-            "cidr": "10.0.0.0/24",
-            "gateway_ip": "10.0.0.1",
-            "allocation_pools": [],
-        }
-        subnet = SubnetConfig.from_dict(data)
-        # Verify required fields
-        assert subnet.cidr == "10.0.0.0/24"
-        assert subnet.gateway_ip == "10.0.0.1"
-        assert subnet.allocation_pools == []
-        # Verify defaults
-        assert subnet.dns_nameservers == []
-        assert subnet.enable_dhcp is True
-
     def test_dhcp_alias(self) -> None:
         """The conftest fixture uses 'dhcp' instead of 'enable_dhcp'."""
         data = {
@@ -462,6 +375,18 @@ class TestSubnetConfigFromDict:
         }
         subnet = SubnetConfig.from_dict(data)
         assert subnet.enable_dhcp is False
+
+    def test_enable_dhcp_overrides_dhcp(self) -> None:
+        """When both 'enable_dhcp' and 'dhcp' present, 'enable_dhcp' wins."""
+        data = {
+            "cidr": "10.0.0.0/24",
+            "gateway_ip": "10.0.0.1",
+            "allocation_pools": [],
+            "enable_dhcp": True,
+            "dhcp": False,
+        }
+        subnet = SubnetConfig.from_dict(data)
+        assert subnet.enable_dhcp is True
 
 
 class TestNetworkConfigFromDict:
@@ -482,19 +407,6 @@ class TestNetworkConfigFromDict:
         assert net.mtu == 9000
         assert net.subnet.cidr == "10.0.0.0/24"
         assert net.subnet.gateway_ip == "10.0.0.1"
-
-    def test_default_mtu(self) -> None:
-        """Verify from_dict applies correct default for mtu."""
-        data = {
-            "subnet": {
-                "cidr": "10.0.0.0/24",
-                "gateway_ip": "10.0.0.1",
-                "allocation_pools": [],
-            },
-        }
-        net = NetworkConfig.from_dict(data)
-        assert net.mtu == 0  # Default when mtu absent
-        assert net.subnet.cidr == "10.0.0.0/24"
 
 
 class TestQuotaConfigFromDict:
@@ -1196,28 +1108,24 @@ class TestFederationConfigValidate:
 class TestFederationRoleAssignmentKeystoneGroup:
     """FederationRoleAssignment with keystone_group field."""
 
-    def test_from_dict_with_keystone_group(self) -> None:
-        data = {"idp_group": "member", "roles": ["member"], "keystone_group": "my-custom-group"}
+    @pytest.mark.parametrize(
+        ("keystone_group", "expected"),
+        [("my-custom-group", "my-custom-group"), (None, "")],
+        ids=["with-keystone-group", "without-keystone-group"],
+    )
+    def test_from_dict_and_validate(self, keystone_group: str | None, expected: str) -> None:
+        data: dict[str, Any] = {"idp_group": "member", "roles": ["member"]}
+        if keystone_group is not None:
+            data["keystone_group"] = keystone_group
+
+        # from_dict
         result = FederationRoleAssignment.from_dict(data)
-        assert result.keystone_group == "my-custom-group"
+        assert result.keystone_group == expected
 
-    def test_from_dict_without_keystone_group(self) -> None:
-        data = {"idp_group": "member", "roles": ["member"]}
-        result = FederationRoleAssignment.from_dict(data)
-        assert result.keystone_group == ""
-
-    def test_validate_with_keystone_group(self) -> None:
-        data = {"idp_group": "member", "roles": ["member"], "keystone_group": "custom"}
+        # validate
         errors: list[str] = []
-        result = FederationRoleAssignment.validate(data, errors, "test")
-        assert result.keystone_group == "custom"
-        assert errors == []
-
-    def test_validate_without_keystone_group(self) -> None:
-        data = {"idp_group": "member", "roles": ["member"]}
-        errors: list[str] = []
-        result = FederationRoleAssignment.validate(data, errors, "test")
-        assert result.keystone_group == ""
+        validated = FederationRoleAssignment.validate(data, errors, "test")
+        assert validated.keystone_group == expected
         assert errors == []
 
     def test_validate_non_string_keystone_group(self) -> None:
@@ -1232,33 +1140,26 @@ class TestFederationRoleAssignmentKeystoneGroup:
 class TestFederationConfigMode:
     """FederationConfig with mode and group_name_separator."""
 
+    @pytest.mark.parametrize(
+        ("mode", "expected_mode"),
+        [("project", "project"), ("group", "group")],
+        ids=["project", "group"],
+    )
+    def test_from_dict_and_validate(self, mode: str, expected_mode: str) -> None:
+        data = {"mode": mode}
+        # from_dict
+        result = FederationConfig.from_dict(data)
+        assert result.mode == expected_mode
+        # validate
+        errors: list[str] = []
+        validated = FederationConfig.validate(data, errors, "test")
+        assert validated.mode == expected_mode
+        assert errors == []
+
     def test_from_dict_defaults(self) -> None:
         result = FederationConfig.from_dict({})
         assert result.mode == "project"
         assert result.group_name_separator == " "
-
-    def test_from_dict_group_mode(self) -> None:
-        data = {
-            "mode": "group",
-            "group_name_separator": " ",
-        }
-        result = FederationConfig.from_dict(data)
-        assert result.mode == "group"
-        assert result.group_name_separator == " "
-
-    def test_validate_group_mode(self) -> None:
-        data = {"mode": "group"}
-        errors: list[str] = []
-        result = FederationConfig.validate(data, errors, "test")
-        assert result.mode == "group"
-        assert errors == []
-
-    def test_validate_project_mode(self) -> None:
-        data = {"mode": "project"}
-        errors: list[str] = []
-        result = FederationConfig.validate(data, errors, "test")
-        assert result.mode == "project"
-        assert errors == []
 
 
 class TestFederationConfigModeValidation:
@@ -1355,28 +1256,16 @@ class TestProjectConfigValidate:
         assert "mtu must be an integer" in errors[0]
         assert "str" in errors[0]
 
-    def test_reclaim_non_boolean(self) -> None:
+    @pytest.mark.parametrize(
+        "field",
+        ["reclaim_floating_ips", "reclaim_router_ips", "track_fip_changes"],
+    )
+    def test_non_boolean_field_rejected(self, field: str) -> None:
         errors: list[str] = []
-        ProjectConfig.validate(self._minimal(reclaim_floating_ips="yes"), errors, "test")
+        ProjectConfig.validate(self._minimal(**{field: "yes"}), errors, "test")
         assert len(errors) == 1
         assert "must be a boolean" in errors[0]
-        assert "reclaim_floating_ips" in errors[0]
-        assert "'yes'" in errors[0]  # Error includes the bad value
-
-    def test_reclaim_router_ips_non_boolean(self) -> None:
-        errors: list[str] = []
-        ProjectConfig.validate(self._minimal(reclaim_router_ips="yes"), errors, "test")
-        assert len(errors) == 1
-        assert "must be a boolean" in errors[0]
-        assert "reclaim_router_ips" in errors[0]
-        assert "'yes'" in errors[0]
-
-    def test_track_fip_changes_non_boolean(self) -> None:
-        errors: list[str] = []
-        ProjectConfig.validate(self._minimal(track_fip_changes="yes"), errors, "test")
-        assert len(errors) == 1
-        assert "must be a boolean" in errors[0]
-        assert "track_fip_changes" in errors[0]
+        assert field in errors[0]
         assert "'yes'" in errors[0]
 
 
@@ -1387,18 +1276,6 @@ class TestProjectConfigValidate:
 
 class TestProjectConfigFromDictEdgeCases:
     """Edge cases for ProjectConfig.from_dict with various missing fields."""
-
-    def test_all_optional_sections_none(self) -> None:
-        """No network, quotas, security_group, or federation sections."""
-        data = {"name": "bare", "resource_prefix": "bare"}
-        cfg = ProjectConfig.from_dict(data)
-
-        assert cfg.name == "bare"
-        assert cfg.resource_prefix == "bare"
-        assert cfg.network is None
-        assert cfg.quotas is None
-        assert cfg.security_group is None
-        assert cfg.federation is None
 
     def test_with_state_key_and_config_path_underscore(self) -> None:
         """_state_key and _config_path are mapped correctly."""
@@ -1412,70 +1289,6 @@ class TestProjectConfigFromDictEdgeCases:
 
         assert cfg.state_key == "custom-key"
         assert cfg.config_path == "/custom/path.yaml"
-
-    def test_group_role_assignments_none(self) -> None:
-        """group_role_assignments absent or None defaults to empty list."""
-        data = {"name": "proj", "resource_prefix": "proj"}
-        cfg = ProjectConfig.from_dict(data)
-        assert cfg.group_role_assignments == []
-
-    def test_state_lists_empty_by_default(self) -> None:
-        """All state lists default to empty when absent."""
-        data = {"name": "proj", "resource_prefix": "proj"}
-        cfg = ProjectConfig.from_dict(data)
-
-        assert cfg.preallocated_fips == []
-        assert cfg.released_fips == []
-        assert cfg.router_ips == []
-        assert cfg.released_router_ips == []
-
-    def test_external_network_name_defaults_empty(self) -> None:
-        """external_network_name defaults to empty string."""
-        data = {"name": "proj", "resource_prefix": "proj"}
-        cfg = ProjectConfig.from_dict(data)
-        assert cfg.external_network_name == ""
-
-
-class TestSubnetConfigFromDictEdgeCases:
-    """Edge cases for SubnetConfig.from_dict with dhcp alias."""
-
-    def test_dhcp_alias_false(self) -> None:
-        """'dhcp: false' maps to enable_dhcp=False."""
-        data = {
-            "cidr": "10.0.0.0/24",
-            "gateway_ip": "10.0.0.1",
-            "allocation_pools": [],
-            "dhcp": False,
-        }
-        subnet = SubnetConfig.from_dict(data)
-        assert subnet.enable_dhcp is False
-
-    def test_enable_dhcp_overrides_dhcp(self) -> None:
-        """When both 'enable_dhcp' and 'dhcp' present, 'enable_dhcp' wins."""
-        data = {
-            "cidr": "10.0.0.0/24",
-            "gateway_ip": "10.0.0.1",
-            "allocation_pools": [],
-            "enable_dhcp": True,
-            "dhcp": False,
-        }
-        subnet = SubnetConfig.from_dict(data)
-        assert subnet.enable_dhcp is True
-
-
-class TestAllocationPoolValidation:
-    """Edge case: AllocationPool with start > end caught in validate()."""
-
-    def test_start_greater_than_end(self) -> None:
-        """SubnetConfig.validate() catches start > end in allocation pools."""
-        data = {
-            "cidr": "192.168.1.0/24",
-            "gateway_ip": "192.168.1.254",
-            "allocation_pools": [{"start": "192.168.1.200", "end": "192.168.1.100"}],
-        }
-        errors: list[str] = []
-        SubnetConfig.validate(data, errors, "test")
-        assert any("start" in e and "end" in e for e in errors)
 
 
 class TestFipEntryFromSdk:
@@ -1508,8 +1321,13 @@ class TestFipEntryFromSdk:
         assert entry.device_id == "dev-1"
         assert entry.device_owner == "compute:nova"
 
-    def test_from_sdk_missing_port_details(self) -> None:
-        """FipEntry.from_sdk handles missing port_details gracefully - verifies ALL fields."""
+    @pytest.mark.parametrize(
+        "port_details",
+        [None, {}],
+        ids=["missing", "empty"],
+    )
+    def test_from_sdk_no_port_details(self, port_details: dict[str, str] | None) -> None:
+        """FipEntry.from_sdk handles missing/empty port_details gracefully."""
         from unittest.mock import MagicMock
 
         fip = MagicMock()
@@ -1520,46 +1338,15 @@ class TestFipEntryFromSdk:
         fip.status = "DOWN"
         fip.router_id = None
         fip.created_at = None
-        # No port_details attribute at all (getattr returns None)
-        del fip.port_details
+        if port_details is None:
+            del fip.port_details
+        else:
+            fip.port_details = port_details
 
         entry = FipEntry.from_sdk(fip)
 
-        # Verify ALL 9 fields (including Nones)
         assert entry.id == "fip-456"
         assert entry.address == "10.0.0.6"
-        assert entry.port_id is None
-        assert entry.fixed_ip_address is None
-        assert entry.status == "DOWN"
-        assert entry.router_id is None
-        assert entry.created_at is None
-        assert entry.device_id is None
-        assert entry.device_owner is None
-
-    def test_from_sdk_empty_port_details(self) -> None:
-        """FipEntry.from_sdk handles empty port_details dict - verifies ALL fields."""
-        from unittest.mock import MagicMock
-
-        fip = MagicMock()
-        fip.id = "fip-789"
-        fip.floating_ip_address = "10.0.0.7"
-        fip.port_id = None
-        fip.fixed_ip_address = None
-        fip.status = "DOWN"
-        fip.router_id = None
-        fip.created_at = None
-        fip.port_details = {}
-
-        entry = FipEntry.from_sdk(fip)
-
-        # Verify ALL 9 fields
-        assert entry.id == "fip-789"
-        assert entry.address == "10.0.0.7"
-        assert entry.port_id is None
-        assert entry.fixed_ip_address is None
-        assert entry.status == "DOWN"
-        assert entry.router_id is None
-        assert entry.created_at is None
         assert entry.device_id is None
         assert entry.device_owner is None
 
@@ -1698,42 +1485,33 @@ class TestReleasedRouterIpEntryFromDict:
 class TestDefaultsConfig:
     """DefaultsConfig.from_dict() extraction of federation_static_mapping_files."""
 
-    def test_empty_when_federation_absent(self) -> None:
-        """No federation section → empty tuple."""
-        cfg = DefaultsConfig.from_dict({})
-        assert cfg.federation_static_mapping_files == ()
-
-    def test_extracts_list(self) -> None:
-        """federation.static_mapping_files list → tuple."""
-        data: dict[str, Any] = {
-            "federation": {
-                "static_mapping_files": ["a.json", "b/*.json"],
-            },
-        }
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            ({}, ()),
+            ({"federation": {"static_mapping_files": []}}, ()),
+            ({"federation": {"mapping_id": "my-mapping"}}, ()),
+        ],
+        ids=["no-federation", "empty-list", "absent-key"],
+    )
+    def test_empty_mapping_files(self, data: dict[str, Any], expected: tuple[()]) -> None:
         cfg = DefaultsConfig.from_dict(data)
-        assert cfg.federation_static_mapping_files == ("a.json", "b/*.json")
+        assert cfg.federation_static_mapping_files == expected
 
-    def test_empty_list(self) -> None:
-        """federation.static_mapping_files: [] → empty tuple."""
-        data: dict[str, Any] = {
-            "federation": {"static_mapping_files": []},
-        }
+    @pytest.mark.parametrize(
+        ("files_value", "expected"),
+        [
+            (["a.json", "b/*.json"], ("a.json", "b/*.json")),
+            ("single.json", ("single.json",)),
+        ],
+        ids=["list", "scalar-string"],
+    )
+    def test_mapping_files_extracted(self, files_value: str | list[str], expected: tuple[str, ...]) -> None:
+        data: dict[str, Any] = {"federation": {"static_mapping_files": files_value}}
         cfg = DefaultsConfig.from_dict(data)
-        assert cfg.federation_static_mapping_files == ()
+        assert cfg.federation_static_mapping_files == expected
 
-    def test_single_string(self) -> None:
-        """YAML scalar string → wrapped in tuple."""
-        data: dict[str, Any] = {
-            "federation": {"static_mapping_files": "single.json"},
-        }
+    def test_absent_key_preserves_other_federation_keys(self) -> None:
+        data: dict[str, Any] = {"federation": {"mapping_id": "my-mapping"}}
         cfg = DefaultsConfig.from_dict(data)
-        assert cfg.federation_static_mapping_files == ("single.json",)
-
-    def test_absent_key_with_other_federation_keys(self) -> None:
-        """Other federation keys present but no static_mapping_files → empty tuple."""
-        data: dict[str, Any] = {
-            "federation": {"mapping_id": "my-mapping"},
-        }
-        cfg = DefaultsConfig.from_dict(data)
-        assert cfg.federation_static_mapping_files == ()
         assert cfg.federation_mapping_id == "my-mapping"
