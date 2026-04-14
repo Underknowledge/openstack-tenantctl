@@ -114,6 +114,18 @@ def ensure_group_role_assignments(
         if group_name not in group_cache:
             group_obj = _find_group(ctx.conn, group_name)
             if group_obj is None:
+                if ctx.dry_run:
+                    for role_name in roles:
+                        label = f"{group_name}+{role_name}"
+                        actions.append(
+                            ctx.record(
+                                ActionStatus.CREATED,
+                                "group_role_assignment",
+                                label,
+                                f"would grant {role_name} to {group_name} (group pending creation)",
+                            )
+                        )
+                    continue
                 msg = f"Group not found: {group_name!r}"
                 raise ValueError(msg)
             group_cache[group_name] = group_obj.id

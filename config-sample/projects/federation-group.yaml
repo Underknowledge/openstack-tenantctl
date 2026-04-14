@@ -1,0 +1,46 @@
+# Group-mode federation example.
+#
+# Uses mapping_mode: "group" so federation mapping rules place IDP users into
+# Keystone groups instead of assigning projects directly.  This solves the
+# "last-rule-wins" limitation: group assignments accumulate across rules,
+# letting users access multiple projects simultaneously.
+#
+# tenantctl automatically:
+#   1. Creates Keystone groups named "{project_name}{separator}{idp_group}"
+#   2. Assigns the listed roles to those groups on this project
+#   3. Generates mapping rules that place IDP users into the groups
+#
+# See config-sample/federation_static_group.json for what the generated
+# mapping rules look like.
+
+name: federation-group-demo
+resource_prefix: fedgrp
+description: "Group-mode federation example"
+
+network:
+  subnet:
+    cidr: 192.168.40.0/24
+
+federation:
+  # Switch this project to group-mode federation.
+  mapping_mode: "group"
+  # Separator between project name and IDP group in auto-derived group names.
+  # With "-": federation-group-demo + member → "federation-group-demo-member"
+  # Default (space): federation-group-demo + member → "federation-group-demo member"
+  group_name_separator: "-"
+  # Required for cross-domain federated authentication.
+  user_type: "ephemeral"
+
+  role_assignments:
+    - idp_group: member
+      roles:
+        - member
+        - load-balancer_member
+      # Auto-derived group name: "federation-group-demo-member"
+      # (project name + separator + idp_group)
+    - idp_group: reader
+      roles:
+        - reader
+      # Override the auto-derived name with a shared group.
+      # Multiple projects can point to the same Keystone group.
+      keystone_group: "shared-readers"

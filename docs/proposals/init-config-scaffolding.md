@@ -375,7 +375,7 @@ existing `from_dict()` and `validate()` methods ignore metadata entirely.
 
 ### New file: `src/init_config.py`
 
-The config scaffolding module (~150-200 lines estimated). Responsibilities:
+The config scaffolding module. Responsibilities:
 
 - `render_defaults_yaml()` — generate `defaults.yaml` from model introspection
 - `render_project_yaml()` — generate `projects/example.yaml`

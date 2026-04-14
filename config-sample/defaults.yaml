@@ -113,11 +113,37 @@ federation:
   # Required when projects use a non-default domain — Keystone needs "type": "ephemeral"
   # on the user element for cross-domain federated authentication to work.
   # user_type: "ephemeral"
+
+  # mapping_mode: default "project"
+  # Controls how federation mapping rules are generated:
+  #   "project" — rules use {"projects": [...]} (default, original behavior)
+  #   "group"   — rules use {"group": {...}} (recommended for multi-project access)
+  #
+  # Why "group"? Keystone only applies the LAST matching rule's project assignments,
+  # so users needing access to multiple projects simultaneously won't get it with
+  # "project" mode. Group assignments accumulate across rules, solving this.
+  #
+  # In group mode, tenantctl automatically:
+  #   1. Creates Keystone groups named "{project_name}{separator}{idp_group}"
+  #   2. Assigns roles from role_assignments to those groups on the project
+  #   3. Generates mapping rules that place IDP users into the groups
+  # mapping_mode: "group"
+
+  # group_name_separator: default " " (space)
+  # Separator between project name and IDP group in auto-derived Keystone group names.
+  # Example with space: project "my project" + idp_group "member" → "my project member"
+  # Example with dash:  project "my project" + idp_group "member" → "my project-member"
+  # group_name_separator: " "
+
   role_assignments:
     - idp_group: member
       roles:
         - member
         - load-balancer_member
+      # keystone_group: default "" (auto-derived from project name + idp_group)
+      # Override the auto-derived Keystone group name in group mode.
+      # When empty, the group name is "{project_name}{separator}{idp_group}".
+      # keystone_group: "my-custom-group"
     - idp_group: reader
       roles:
         - reader

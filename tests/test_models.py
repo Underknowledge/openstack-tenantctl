@@ -1192,6 +1192,86 @@ class TestFederationConfigValidate:
         assert result.group_prefix == "/custom/path/"
 
 
+class TestFederationRoleAssignmentKeystoneGroup:
+    """FederationRoleAssignment with keystone_group field."""
+
+    def test_from_dict_with_keystone_group(self) -> None:
+        data = {"idp_group": "member", "roles": ["member"], "keystone_group": "my-custom-group"}
+        result = FederationRoleAssignment.from_dict(data)
+        assert result.keystone_group == "my-custom-group"
+
+    def test_from_dict_without_keystone_group(self) -> None:
+        data = {"idp_group": "member", "roles": ["member"]}
+        result = FederationRoleAssignment.from_dict(data)
+        assert result.keystone_group == ""
+
+    def test_validate_with_keystone_group(self) -> None:
+        data = {"idp_group": "member", "roles": ["member"], "keystone_group": "custom"}
+        errors: list[str] = []
+        result = FederationRoleAssignment.validate(data, errors, "test")
+        assert result.keystone_group == "custom"
+        assert errors == []
+
+    def test_validate_without_keystone_group(self) -> None:
+        data = {"idp_group": "member", "roles": ["member"]}
+        errors: list[str] = []
+        result = FederationRoleAssignment.validate(data, errors, "test")
+        assert result.keystone_group == ""
+        assert errors == []
+
+    def test_validate_non_string_keystone_group(self) -> None:
+        data: dict[str, Any] = {"idp_group": "member", "roles": ["member"], "keystone_group": 42}
+        errors: list[str] = []
+        result = FederationRoleAssignment.validate(data, errors, "test")
+        assert result.keystone_group == ""
+        assert len(errors) == 1
+        assert "keystone_group must be a string" in errors[0]
+
+
+class TestFederationConfigGroupMode:
+    """FederationConfig with mapping_mode, group_domain, group_name_separator."""
+
+    def test_from_dict_defaults(self) -> None:
+        result = FederationConfig.from_dict({})
+        assert result.mapping_mode == "project"
+        assert result.group_name_separator == " "
+
+    def test_from_dict_group_mode(self) -> None:
+        data = {
+            "mapping_mode": "group",
+            "group_name_separator": "-",
+        }
+        result = FederationConfig.from_dict(data)
+        assert result.mapping_mode == "group"
+        assert result.group_name_separator == "-"
+
+    def test_validate_group_mode(self) -> None:
+        data = {"mapping_mode": "group"}
+        errors: list[str] = []
+        result = FederationConfig.validate(data, errors, "test")
+        assert result.mapping_mode == "group"
+        assert errors == []
+
+    def test_validate_project_mode(self) -> None:
+        data = {"mapping_mode": "project"}
+        errors: list[str] = []
+        result = FederationConfig.validate(data, errors, "test")
+        assert result.mapping_mode == "project"
+        assert errors == []
+
+
+class TestFederationConfigGroupModeValidation:
+    """Validation rejects invalid mapping_mode."""
+
+    def test_invalid_mapping_mode(self) -> None:
+        data = {"mapping_mode": "invalid"}
+        errors: list[str] = []
+        FederationConfig.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "mapping_mode must be one of" in errors[0]
+        assert "'invalid'" in errors[0]
+
+
 class TestProjectConfigValidate:
     """ProjectConfig.validate() integrates all checks."""
 

@@ -22,6 +22,7 @@ Reference for the OpenStack TenantCtl codebase. This document covers core types,
    - [security_group](#srcresourcessecurity_group)
    - [group_roles](#srcresourcesgroup_roles)
    - [federation](#srcresourcesfederation)
+   - [keystone_groups](#srcresourceskeystone_groups)
    - [compute](#srcresourcescompute)
    - [teardown](#srcresourcesteardown)
    - [prealloc.fip](#srcresourcespreallocfip)
@@ -50,6 +51,7 @@ openstack-tenantctl/
 │       ├── quotas.py               # Compute, network, load balancer, block storage quotas
 │       ├── security_group.py       # Security groups with presets
 │       ├── federation.py           # SAML/OIDC identity federation
+│       ├── keystone_groups.py     # Keystone group lifecycle (group-mode federation)
 │       ├── group_roles.py          # Group-to-project role assignments
 │       ├── compute.py              # Server shelve/unshelve
 │       ├── teardown.py             # Safety-checked project removal
@@ -557,16 +559,19 @@ def reconcile(
 **Returns**: List of all Action objects (same as `ctx.actions`)
 
 **Behavior**:
-1. For each project in `projects`:
+1. Before per-project loop:
+   - Call `ensure_keystone_groups(all_projects, ctx)` — creates Keystone groups needed by group-mode federation
+   - On failure: log error, add `"__keystone_groups__"` to `ctx.failed_projects`, continue
+2. For each project in `projects`:
    - Set `ctx.current_project_name`
    - Dispatch to state handler via `_STATE_HANDLERS` dict
    - On success: persist `last_reconciled_at` timestamp to state file
    - On failure: log error, add to `ctx.failed_projects`, continue
-2. After all projects:
+3. After all projects:
    - Clear `current_project_id` and `current_project_name`
    - Call `ensure_federation_mapping(all_projects, ctx)` (uses ALL projects, not filtered)
 
-**Error Isolation**: One project's failure doesn't block others from provisioning.
+**Error Isolation**: Failures in keystone group creation, individual projects, or federation mapping don't block subsequent steps.
 
 ---
 
@@ -593,8 +598,9 @@ _STATE_HANDLERS: dict[str, StateHandler] = {
 **Resource Pipeline** (executed sequentially):
 1. `ensure_project()` — Create/update project, set `ctx.current_project_id`
 2. Persist project metadata (project_id, domain_id) to state file
-3. `ensure_group_role_assignments()` — Assign groups to roles
-4. `ensure_network_stack()` — Network, subnet, router
+3. `augment_group_role_assignments()` — Append federation-derived group assignments (group mode only)
+4. `ensure_group_role_assignments()` — Assign groups to roles (including derived assignments)
+5. `ensure_network_stack()` — Network, subnet, router
 5. `track_router_ips()` — Snapshot router external IPs, detect changes
 6. `ensure_preallocated_fips()` — Pre-allocate floating IPs + drift detection
 7. `ensure_preallocated_network()` — Network quota enforcement
@@ -870,7 +876,54 @@ def ensure_federation_mapping(
 - Otherwise: prepend `{group_prefix}{project_name}/`
 - `idp_group` can be a single string or a list of strings (placed in `any_one_of` clause)
 
-**Config fields used** (per project): `cfg.federation.issuer`, `cfg.federation.mapping_id`, `cfg.federation.group_prefix`, `cfg.federation.role_assignments[].idp_group`, `cfg.federation.role_assignments[].roles`
+**Config fields used** (per project): `cfg.federation.issuer`, `cfg.federation.mapping_id`, `cfg.federation.group_prefix`, `cfg.federation.mapping_mode`, `cfg.federation.group_name_separator`, `cfg.federation.role_assignments[].idp_group`, `cfg.federation.role_assignments[].roles`, `cfg.federation.role_assignments[].keystone_group`, `cfg.domain`
+
+**Mapping modes**:
+- `"project"` (default): rules use `{"projects": [...]}` — original behavior
+- `"group"`: rules use `{"group": {...}}` — Keystone group name is auto-derived as `{project_name}{separator}{idp_group}` (or explicit `keystone_group` override)
+
+---
+
+#### augment_group_role_assignments()
+
+```python
+def augment_group_role_assignments(cfg: ProjectConfig) -> ProjectConfig:
+    """Add federation-derived group_role_assignments in group mapping mode."""
+```
+
+**Returns**: Modified `ProjectConfig` with derived `GroupRoleAssignment` entries appended (or the original config unchanged if not in group mode).
+
+**Behavior**:
+- If `cfg.federation.mapping_mode != "group"`, returns `cfg` unchanged
+- For each `role_assignment`, derives a Keystone group name and appends a `GroupRoleAssignment(group=..., roles=...)` to the config
+- Existing manual `group_role_assignments` are preserved; derived entries are appended
+
+**Used by**: `_reconcile_present()` and `_reconcile_absent()` in the reconciler, so that `ensure_group_role_assignments()` wires federation-derived groups to project roles.
+
+---
+
+### `src.resources.keystone_groups`
+
+#### ensure_keystone_groups()
+
+```python
+def ensure_keystone_groups(
+    all_projects: list[ProjectConfig],
+    ctx: SharedContext,
+) -> list[Action]:
+    """Create Keystone groups needed by group-mode federation."""
+```
+
+**Returns**: List of Action objects (CREATED, SKIPPED per group).
+
+**Behavior**:
+- Iterates all `present`-state projects with `mapping_mode == "group"`
+- Derives group names from each `role_assignment` entry
+- Deduplicates: same group name across projects is created once
+- For each unique group: `find_group()` → skip if exists, `create_group()` if missing
+- Idempotent, dry-run aware, offline aware
+
+**Reconciliation order**: Runs **before** the per-project loop so groups exist when `ensure_group_role_assignments()` looks them up.
 
 ---
 

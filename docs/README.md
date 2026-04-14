@@ -80,20 +80,22 @@ The provisioner follows a **three-phase execution model**:
 │ (Skipped entirely in dry-run mode)              │
 └─────────────────────────────────────────────────┘
                        ↓
-┌─────────────────────────────────────────────────┐
-│ Phase 3: Reconcile                              │
-│ For each project (error-isolated):              │
-│   1. Project       → Create/update tenant       │
-│   2. Network stack → Network, subnet, router    │
-│   3. Floating IPs  → Allocate and track pool    │
-│   4. Pre-alloc net → Network + quota lock       │
-│   5. Quotas        → Compute, network, storage  │
-│   6. Security group → Create baseline rules     │
-│   7. Group roles   → Keystone role grants       │
-│   8. Compute ops   → Shelve/unshelve            │
-│ After all projects:                             │
-│   9. Federation    → Update shared mapping      │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│ Phase 3: Reconcile                               │
+│ Before per-project loop:                         │
+│   0. Keystone groups → Create groups (group mode)│
+│ For each project (error-isolated):               │
+│   1. Project       → Create/update tenant        │
+│   2. Network stack → Network, subnet, router     │
+│   3. Floating IPs  → Allocate and track pool     │
+│   4. Pre-alloc net → Network + quota lock        │
+│   5. Quotas        → Compute, network, storage   │
+│   6. Security group → Create baseline rules      │
+│   7. Group roles   → Keystone role grants        │
+│   8. Compute ops   → Shelve/unshelve             │
+│ After all projects:                              │
+│   9. Federation    → Update shared mapping       │
+└──────────────────────────────────────────────────┘
 ```
 
 **Detailed architecture**: [SPECIFICATION.md § Architecture](SPECIFICATION.md#2-architecture)
@@ -412,6 +414,7 @@ federation:
   mapping_id: "my-mapping"
   group_prefix: "/services/openstack/"
   user_type: "ephemeral"  # Optional: adds "type" to user element in mapping rules
+  mapping_mode: "group"   # "project" (default) or "group" (multi-project support)
   role_assignments:
     - idp_group: member
       roles: [member, load-balancer_member]
@@ -419,8 +422,10 @@ federation:
       roles: [admin]
 ```
 
+- **Two mapping modes**: `"project"` (default, original) uses `{"projects": [...]}` rules; `"group"` uses `{"group": {...}}` rules — recommended when users need access to multiple projects simultaneously (Keystone accumulates group assignments across rules)
+- In group mode, tenantctl automatically creates Keystone groups and wires role assignments
 - Rules are ordered deterministically for stable diffs
-- Per-project overrides for `group_prefix`, `role_assignments`, `issuer`, and `user_type`
+- Per-project overrides for `group_prefix`, `role_assignments`, `issuer`, `user_type`, and `mapping_mode`
 - Domain-aware: when `domain` is set on a project, rules include `"domain": {"name": "..."}` in the projects element
 - `user_type` support: when set (e.g., `"ephemeral"`), rules include `"type"` on the user element — required for cross-domain federated authentication
 - Static rules from `federation_static.json` merged into the mapping
@@ -491,6 +496,7 @@ src/
     ├── quotas.py              # Compute, network, storage, LB quotas
     ├── security_group.py      # Security group & rule management
     ├── federation.py          # Federation mapping generation
+    ├── keystone_groups.py     # Keystone group lifecycle (group-mode federation)
     ├── group_roles.py         # Group-to-role assignments
     ├── compute.py             # Shelve/unshelve operations
     ├── teardown.py            # Safe project deletion
@@ -566,13 +572,9 @@ The `ConfigSource` protocol requires only two methods — `load_defaults()` and 
 
 | Metric | Value |
 |--------|-------|
-| **Production Code** | ~1,800 lines across 15 modules |
-| **Test Code** | ~1,600 lines across 10 test modules |
-| **Test-to-Code Ratio** | ~0.88:1 |
 | **Language** | Python 3.11+ |
 | **Dependencies** | openstacksdk 4.x, pyyaml, deepmerge, tenacity |
 | **Dev Dependencies** | ruff, mypy, pytest, pytest-mock |
-| **Documentation** | 2,500+ lines across 6 documents |
 | **Design Decisions** | 20 ADRs documented |
 
 ---

@@ -15,6 +15,7 @@ in a single ``any_one_of`` clause.
 
 from __future__ import annotations
 
+import dataclasses
 import difflib
 import json
 import logging
@@ -23,7 +24,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from openstack.connection import Connection
 
-from src.models import ProjectConfig, ProjectState
+    from src.models.federation import FederationRoleAssignment
+
+from src.models import GroupRoleAssignment, ProjectConfig, ProjectState
 from src.utils import Action, ActionStatus, SharedContext, retry
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,21 @@ def _resolve_group_path(idp_group: str, project_name: str, group_prefix: str) ->
     if idp_group.startswith("/"):
         return idp_group
     return f"{group_prefix}{project_name}/{idp_group}"
+
+
+def _derive_group_name(
+    project_name: str,
+    assignment: FederationRoleAssignment,
+    separator: str,
+) -> str:
+    """Derive Keystone group name from project name and IDP group."""
+    if assignment.keystone_group:
+        return assignment.keystone_group
+    raw = assignment.idp_group
+    short_name = raw if isinstance(raw, str) else raw[0]
+    if short_name.startswith("/"):
+        short_name = short_name.rsplit("/", 1)[-1]
+    return f"{project_name}{separator}{short_name}"
 
 
 def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, Any]]:
@@ -78,33 +96,57 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
             if user_type:
                 user_element["type"] = user_type
 
-            # Build projects element (add domain only when domain is set)
-            projects_element: dict[str, Any] = {
-                "projects": [
-                    {
-                        "name": project_name,
-                        "roles": [{"name": r} for r in roles],
+            if federation_cfg.mapping_mode == "group":
+                ks_group_name = _derive_group_name(project_name, assignment, federation_cfg.group_name_separator)
+                group_element: dict[str, Any] = {
+                    "group": {
+                        "name": ks_group_name,
+                        "domain": {"name": domain_name or "Default"},
                     }
-                ]
-            }
-            if domain_name is not None:
-                projects_element["domain"] = {"name": domain_name}
+                }
+                rule: dict[str, Any] = {
+                    "local": [
+                        {"user": user_element},
+                        group_element,
+                    ],
+                    "remote": [
+                        {"type": "OIDC-preferred_username"},
+                        {"type": "OIDC-email"},
+                        {"type": "HTTP_OIDC_ISS", "any_one_of": [issuer]},
+                        {
+                            "type": "OIDC-groups",
+                            "any_one_of": group_paths,
+                        },
+                    ],
+                }
+            else:
+                # Build projects element (add domain only when domain is set)
+                projects_element: dict[str, Any] = {
+                    "projects": [
+                        {
+                            "name": project_name,
+                            "roles": [{"name": r} for r in roles],
+                        }
+                    ]
+                }
+                if domain_name is not None:
+                    projects_element["domain"] = {"name": domain_name}
 
-            rule: dict[str, Any] = {
-                "local": [
-                    {"user": user_element},
-                    projects_element,
-                ],
-                "remote": [
-                    {"type": "OIDC-preferred_username"},
-                    {"type": "OIDC-email"},
-                    {"type": "HTTP_OIDC_ISS", "any_one_of": [issuer]},
-                    {
-                        "type": "OIDC-groups",
-                        "any_one_of": group_paths,
-                    },
-                ],
-            }
+                rule = {
+                    "local": [
+                        {"user": user_element},
+                        projects_element,
+                    ],
+                    "remote": [
+                        {"type": "OIDC-preferred_username"},
+                        {"type": "OIDC-email"},
+                        {"type": "HTTP_OIDC_ISS", "any_one_of": [issuer]},
+                        {
+                            "type": "OIDC-groups",
+                            "any_one_of": group_paths,
+                        },
+                    ],
+                }
             # Sort key: use first resolved path (list is already sorted)
             rules.append((project_name, group_paths[0], rule))
 
@@ -216,3 +258,22 @@ def ensure_federation_mapping(
         mapping_id,
         f"rules={len(combined_rules)}",
     )
+
+
+def augment_group_role_assignments(cfg: ProjectConfig) -> ProjectConfig:
+    """Add federation-derived group_role_assignments in group mapping mode.
+
+    In group mode, each ``role_assignment`` entry produces a Keystone group
+    whose name is derived from the project name and IDP group.  This function
+    appends ``GroupRoleAssignment`` entries for those derived groups so the
+    existing ``ensure_group_role_assignments`` machinery wires up the roles.
+    """
+    if not cfg.federation or cfg.federation.mapping_mode != "group":
+        return cfg
+    derived: list[GroupRoleAssignment] = []
+    for assignment in cfg.federation.role_assignments:
+        ks_group = _derive_group_name(cfg.name, assignment, cfg.federation.group_name_separator)
+        derived.append(GroupRoleAssignment(group=ks_group, roles=list(assignment.roles)))
+    if not derived:
+        return cfg
+    return dataclasses.replace(cfg, group_role_assignments=list(cfg.group_role_assignments) + derived)

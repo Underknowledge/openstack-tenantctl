@@ -5,7 +5,11 @@ from __future__ import annotations
 import dataclasses
 
 from src.models import ProjectConfig
-from src.resources.federation import _build_generated_rules, ensure_federation_mapping
+from src.resources.federation import (
+    _build_generated_rules,
+    augment_group_role_assignments,
+    ensure_federation_mapping,
+)
 from src.utils import ActionStatus, SharedContext
 
 
@@ -18,6 +22,9 @@ def _make_project_cfg(
     domain: str | None = None,
     domain_id: str = "default",
     user_type: str = "",
+    mapping_mode: str = "project",
+    group_name_separator: str = " ",
+    group_role_assignments: list[dict] | None = None,
 ) -> ProjectConfig:
     """Build a minimal project config with federation settings."""
     fed_dict: dict = {
@@ -25,6 +32,8 @@ def _make_project_cfg(
         "mapping_id": mapping_id,
         "group_prefix": group_prefix,
         "role_assignments": role_assignments,
+        "mapping_mode": mapping_mode,
+        "group_name_separator": group_name_separator,
     }
     if user_type:
         fed_dict["user_type"] = user_type
@@ -36,6 +45,8 @@ def _make_project_cfg(
     }
     if domain is not None:
         project_dict["domain"] = domain
+    if group_role_assignments is not None:
+        project_dict["group_role_assignments"] = group_role_assignments
     return ProjectConfig.from_dict(project_dict)
 
 
@@ -754,3 +765,250 @@ class TestDomainAwareFederationRules:
         assert plain_rule["local"][1]["projects"][0]["name"] == "plain_proj"
         assert "domain" not in plain_rule["local"][1]
         assert "type" not in plain_rule["local"][0]["user"]
+
+
+class TestGroupModeRules:
+    """Group-mode rule generation produces group elements instead of projects."""
+
+    def test_group_mode_generates_group_element(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        # Group element instead of projects element
+        assert "group" in rules[0]["local"][1]
+        assert "projects" not in rules[0]["local"][1]
+        assert rules[0]["local"][1]["group"]["name"] == "proj member"
+        assert rules[0]["local"][1]["group"]["domain"] == {"name": "Default"}
+
+    def test_group_mode_auto_derived_name(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "my project",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][1]["group"]["name"] == "my project member"
+
+    def test_group_mode_space_separator(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "reader", "roles": ["reader"]}],
+                mapping_mode="group",
+                group_name_separator=" ",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["name"] == "proj reader"
+
+    def test_group_mode_custom_separator(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+                group_name_separator="-",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["name"] == "proj-member"
+
+    def test_group_mode_explicit_keystone_group(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"], "keystone_group": "custom-group"}],
+                mapping_mode="group",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["name"] == "custom-group"
+
+    def test_group_mode_absolute_idp_path_stripped(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "/services/openstack/org/member", "roles": ["member"]}],
+                mapping_mode="group",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        # Absolute path stripped to last segment for group name
+        assert rules[0]["local"][1]["group"]["name"] == "proj member"
+
+    def test_group_mode_list_idp_group(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": ["alpha", "beta"], "roles": ["member"]}],
+                mapping_mode="group",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        # Uses first entry for group name derivation
+        assert rules[0]["local"][1]["group"]["name"] == "proj alpha"
+
+    def test_group_mode_user_type_propagated(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+                user_type="ephemeral",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][0]["user"]["type"] == "ephemeral"
+
+    def test_group_mode_with_domain(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+                domain="MyDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["domain"] == {"name": "MyDomain"}
+
+    def test_group_mode_no_domain_defaults_to_default(self) -> None:
+        """When cfg.domain is None, group-mode rules use 'Default' as domain name."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["domain"] == {"name": "Default"}
+
+    def test_project_mode_unchanged(self) -> None:
+        """Backward compat: project mode still produces projects element."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="project",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert "projects" in rules[0]["local"][1]
+        assert "group" not in rules[0]["local"][1]
+
+    def test_mixed_modes_coexist(self) -> None:
+        """One project group mode, one project mode, in same mapping."""
+        projects = [
+            _make_project_cfg(
+                "group_proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="group",
+            ),
+            _make_project_cfg(
+                "project_proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mapping_mode="project",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 2
+        # Sorted by project name: group_proj first, project_proj second
+        assert "group" in rules[0]["local"][1]
+        assert "projects" in rules[1]["local"][1]
+
+
+class TestAugmentGroupRoleAssignments:
+    """augment_group_role_assignments derives group_role_assignments from federation."""
+
+    def test_group_mode_adds_derived_assignments(self) -> None:
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member", "load-balancer_member"]},
+                {"idp_group": "reader", "roles": ["reader"]},
+            ],
+            mapping_mode="group",
+        )
+        result = augment_group_role_assignments(cfg)
+
+        # Two derived assignments appended
+        assert len(result.group_role_assignments) == 2
+        assert result.group_role_assignments[0].group == "proj member"
+        assert result.group_role_assignments[0].roles == ["member", "load-balancer_member"]
+        assert result.group_role_assignments[1].group == "proj reader"
+        assert result.group_role_assignments[1].roles == ["reader"]
+
+    def test_project_mode_no_change(self) -> None:
+        cfg = _make_project_cfg(
+            "proj",
+            [{"idp_group": "member", "roles": ["member"]}],
+            mapping_mode="project",
+        )
+        result = augment_group_role_assignments(cfg)
+
+        assert result is cfg  # Same object, no change
+
+    def test_preserves_existing_assignments(self) -> None:
+        cfg = _make_project_cfg(
+            "proj",
+            [{"idp_group": "member", "roles": ["member"]}],
+            mapping_mode="group",
+            group_role_assignments=[{"group": "manual-group", "roles": ["admin"]}],
+        )
+        result = augment_group_role_assignments(cfg)
+
+        # Manual assignment preserved + derived appended
+        assert len(result.group_role_assignments) == 2
+        assert result.group_role_assignments[0].group == "manual-group"
+        assert result.group_role_assignments[0].roles == ["admin"]
+        assert result.group_role_assignments[1].group == "proj member"
+        assert result.group_role_assignments[1].roles == ["member"]
+
+    def test_no_federation_no_change(self) -> None:
+        cfg = ProjectConfig.from_dict({"name": "nofed", "resource_prefix": "nofed"})
+        result = augment_group_role_assignments(cfg)
+
+        assert result is cfg
+
+    def test_teardown_revokes_derived_assignments(self) -> None:
+        """Verify that derived assignments can be flipped to absent for revocation."""
+        cfg = _make_project_cfg(
+            "proj",
+            [{"idp_group": "member", "roles": ["member"]}],
+            mapping_mode="group",
+        )
+        effective = augment_group_role_assignments(cfg)
+
+        # Simulate teardown: flip all assignments to absent
+        revoked = dataclasses.replace(
+            effective,
+            group_role_assignments=[
+                dataclasses.replace(entry, state="absent") for entry in effective.group_role_assignments
+            ],
+        )
+        assert len(revoked.group_role_assignments) == 1
+        assert revoked.group_role_assignments[0].state == "absent"
+        assert revoked.group_role_assignments[0].group == "proj member"

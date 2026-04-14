@@ -36,6 +36,7 @@ def mock_conn() -> MagicMock:
     identity.get_mapping = MagicMock(name="get_mapping")
     identity.update_mapping = MagicMock(name="update_mapping")
     identity.find_group = MagicMock(name="find_group")
+    identity.create_group = MagicMock(name="create_group")
     identity.find_role = MagicMock(name="find_role")
     identity.validate_group_has_project_role = MagicMock(name="validate_group_has_project_role")
     identity.assign_project_role_to_group = MagicMock(name="assign_project_role_to_group")
