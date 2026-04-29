@@ -113,8 +113,9 @@ def _ensure_network_quotas(
     Load balancer quotas can be specified in the network section but are handled
     via a separate API (conn.load_balancer) with graceful degradation if unavailable.
 
-    Excludes floating_ips unconditionally because the locked-FIP module
-    manages that quota.  Excludes networks when <= 1 (pre-allocated resource).
+    Owns every Neutron quota key including ``networks``, ``subnets`` and
+    ``routers``.  Only ``floating_ips`` is excluded — that quota is managed
+    by the pre-allocated FIP module which couples it to actual FIP allocation.
     """
     if ctx.conn is None:
         msg = "ctx.conn is None — not available in offline mode"
@@ -135,11 +136,9 @@ def _ensure_network_quotas(
         else:
             neutron_quotas[key] = value
 
-    # Exclude pre-allocated resource quotas from Neutron quotas
+    # Exclude pre-allocated resource quotas from Neutron quotas.
+    # The FIP module couples floating_ips quota to allocation, so it owns it.
     neutron_quotas.pop("floating_ips", None)
-
-    if neutron_quotas.get("networks", 0) <= 1:
-        neutron_quotas.pop("networks", None)
 
     if not neutron_quotas and not lb_quotas:
         return [
