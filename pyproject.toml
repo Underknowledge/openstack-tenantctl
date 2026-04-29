@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openstack-tenantctl"
-version = "0.5.0"
+version = "0.6.0"
 description = "Project-as-Code for OpenStack — declarative tenant provisioning enabling IaaS"
 readme = "README.md"
 requires-python = ">=3.11"

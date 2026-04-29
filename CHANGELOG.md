@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-29
+
+### Features
+- `tenantctl init [--config-dir PATH]` subcommand: bootstraps a working config directory from bundled sample files for pip users who don't have the repo checkout
+- Sample configs (`defaults.yaml`, `projects/minimal.yaml`, `federation_static*.json`) shipped as package data inside the wheel
+- Federation `mode` now accepts a list of strings (e.g. `mode: ["project", "group"]`) in addition to a single string; combined mode produces rules with both group membership and direct project role assignment in a single mapping rule — useful when application credentials require project-scoped roles alongside Keystone group membership
+- Three-state `federation.domain` override: absent or `""` inherits the project's domain (existing behavior), explicit `null` suppresses the domain element from generated mapping rules, any other string sets a literal override
+
+### Bug Fixes
+- Fixed dry-run quota crash when project doesn't exist yet: `ensure_quotas()` now gracefully handles empty project IDs in dry-run mode instead of attempting invalid API calls
+- Fixed RAM quota unit conversion: `parse_quota_value()` now converts to MiB (binary, 2²⁰) instead of MB (decimal, 10⁶), matching OpenStack Nova's actual RAM unit; e.g. `"50GiB"` now correctly yields 51200 MiB instead of 53687
+- Fixed dry-run/live report inconsistency for network quotas: dual ownership between `ensure_preallocated_network` and `ensure_quotas` (both wrote `networks`/`subnets`/`routers` when `networks <= 1`) caused dry-run plans like `(would update (network: subnets: 2 → 5))` to be silently performed by the next live run while reporting `[SKIPPED] already up to date`. Quota writes are now consolidated in `ensure_quotas`; `ensure_preallocated_network` only manages the network/subnet/router resource lifecycle
+
+### Chores
+- Concurrency tests: `multiprocessing.Pool` → `ThreadPoolExecutor`, reduced sleep times
+
+### Breaking Changes (Library API)
+- `ensure_preallocated_network(cfg, project_id, ctx)` no longer writes any quotas; it now only ensures the pre-allocated network resource exists. Library users who relied on it as a side-effect quota-setter must add an explicit `ensure_quotas(cfg, project_id, ctx)` call (or use `TenantCtl.run()`, which already does)
+- `ensure_quotas(cfg, project_id, ctx)` now writes `networks`, `subnets`, and `routers` for every project regardless of value. Previously these were silently dropped when `quotas.network.networks <= 1` (because `ensure_preallocated_network` was assumed to handle them). Only `floating_ips` remains owned by the FIP module
+- `ensure_project(cfg, ctx)` now returns `tuple[Action, str, bool | None]` (was `tuple[Action, str]`). The third element is `was_disabled` — the project's `is_enabled` flag *before* this call attempted any update (`True` if existed-and-disabled, `False` if existed-and-enabled, `None` if no pre-existing project). Callers should unpack three values; passing through with `_` works fine for users who don't need the new field
+
+### Performance
+- Reconciler no longer issues a separate Keystone domain + project lookup just to detect locked→present transitions. The pre-update enabled state surfaced by `ensure_project` is reused, halving project-resolution traffic per `present`-state project
+
 ## [0.5.0] - 2026-04-14
 
 ### Features

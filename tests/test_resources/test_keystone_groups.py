@@ -65,7 +65,9 @@ class TestEnsureKeystoneGroups:
         assert actions[0].status == ActionStatus.CREATED
         assert actions[0].name == "proj member"
         shared_ctx.conn.identity.find_domain.assert_called_once_with("default")
-        shared_ctx.conn.identity.find_group.assert_called_once_with("proj member", domain_id=DOMAIN_UUID)
+        shared_ctx.conn.identity.find_group.assert_called_once_with(
+            "proj member", ignore_missing=True, domain_id=DOMAIN_UUID
+        )
         shared_ctx.conn.identity.create_group.assert_called_once_with(name="proj member", domain_id=DOMAIN_UUID)
 
     def test_skips_existing_groups(self, shared_ctx: SharedContext) -> None:
@@ -81,7 +83,9 @@ class TestEnsureKeystoneGroups:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.SKIPPED
         assert "already exists" in actions[0].details
-        shared_ctx.conn.identity.find_group.assert_called_once_with("proj member", domain_id=DOMAIN_UUID)
+        shared_ctx.conn.identity.find_group.assert_called_once_with(
+            "proj member", ignore_missing=True, domain_id=DOMAIN_UUID
+        )
         shared_ctx.conn.identity.create_group.assert_not_called()
 
     def test_dry_run_reports_without_creating(self, dry_run_ctx: SharedContext) -> None:
@@ -97,7 +101,9 @@ class TestEnsureKeystoneGroups:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.CREATED
         assert "would create" in actions[0].details
-        dry_run_ctx.conn.identity.find_group.assert_called_once_with("proj member", domain_id=DOMAIN_UUID)
+        dry_run_ctx.conn.identity.find_group.assert_called_once_with(
+            "proj member", ignore_missing=True, domain_id=DOMAIN_UUID
+        )
         dry_run_ctx.conn.identity.create_group.assert_not_called()
 
     def test_offline_skips(self, offline_ctx: SharedContext) -> None:
