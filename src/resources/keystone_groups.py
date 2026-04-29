@@ -29,7 +29,7 @@ def _find_group(conn: Connection, name: str, domain_id: str | None = None) -> Gr
     kwargs: dict[str, str] = {}
     if domain_id:
         kwargs["domain_id"] = domain_id
-    return identity_v3(conn).find_group(name, **kwargs)  # type: ignore[no-any-return]
+    return identity_v3(conn).find_group(name, ignore_missing=True, **kwargs)  # type: ignore[no-any-return]
 
 
 @retry()
