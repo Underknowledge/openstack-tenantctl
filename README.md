@@ -132,7 +132,12 @@ pip install git+https://github.com/Underknowledge/openstack-tenantctl.git
 pip install git+https://github.com/Underknowledge/openstack-tenantctl.git@v0.3.0
 ```
 
-After installation, the `tenantctl` command is available system-wide.
+After installation, bootstrap a starter config directory:
+
+```bash
+tenantctl init                         # creates config/ with defaults + minimal project
+tenantctl init --config-dir myconfig/  # or choose a custom path
+```
 
 ### Option 2: Local development installation
 
@@ -175,6 +180,13 @@ tenantctl -v
 ## Usage
 
 ```
+tenantctl init [--config-dir PATH]
+
+  Bootstrap a starter config directory from bundled sample files.
+  Safe to run once: exits with an error if YAML files already exist.
+
+  --config-dir PATH      Target directory (default: config/)
+
 tenantctl [OPTIONS]
 
 Options:

@@ -38,6 +38,9 @@ tenantctl = "src.main:cli"
 [tool.setuptools.packages.find]
 include = ["src*"]
 
+[tool.setuptools.package-data]
+"src.sample_config" = ["*.yaml", "*.json", "projects/*.yaml"]
+
 [tool.black]
 line-length = 120
 target-version = ["py311"]
