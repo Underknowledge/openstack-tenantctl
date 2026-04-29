@@ -78,10 +78,15 @@ def is_project_disabled(cfg: ProjectConfig, ctx: SharedContext) -> bool:
     return not project.is_enabled
 
 
-def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]:
+def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str, bool | None]:
     """Ensure the project exists with correct settings.
 
-    Returns (Action, project_id).
+    Returns ``(Action, project_id, was_disabled)`` where ``was_disabled``
+    is the project's ``is_enabled`` flag *before* this call attempted any
+    update — ``True`` if the project existed and was disabled, ``False``
+    if it existed and was enabled, ``None`` if there was no pre-existing
+    project (created here, or unknown in offline mode).  Callers use this
+    to detect locked→present transitions without an extra API round-trip.
     """
     name: str = cfg.name
     description: str = cfg.description
@@ -96,10 +101,11 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
             name,
             "would create/update project (offline)",
         )
-        return action, ""
+        return action, "", None
 
     domain_id = _resolve_domain(ctx.conn, domain_ref)
     project = _find_project(ctx.conn, name, domain_id)
+    was_disabled: bool | None = None if project is None else not project.is_enabled
 
     # Online dry-run: read state, compute diff, but don't write.
     if ctx.dry_run:
@@ -110,7 +116,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
                 name,
                 f"would create (description={description!r}, enabled={enabled})",
             )
-            return action, ""
+            return action, "", was_disabled
         changes: list[str] = []
         if project.description != description:
             changes.append(f"description: {project.description!r} → {description!r}")
@@ -124,7 +130,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
                 f"would update ({', '.join(changes)})",
                 project_id=project.id,
             )
-            return action, project.id
+            return action, project.id, was_disabled
         action = ctx.record(
             ActionStatus.SKIPPED,
             "project",
@@ -132,7 +138,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
             f"up to date (id={project.id})",
             project_id=project.id,
         )
-        return action, project.id
+        return action, project.id, was_disabled
 
     # Normal mode: create or update.
     if project is None:
@@ -150,7 +156,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
             f"id={project.id}",
             project_id=project.id,
         )
-        return action, project.id
+        return action, project.id, was_disabled
 
     needs_update = project.description != description or project.is_enabled != enabled
 
@@ -168,7 +174,7 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
             f"id={project.id}",
             project_id=project.id,
         )
-        return action, project.id
+        return action, project.id, was_disabled
 
     logger.debug("Project %s already up to date", name)
     action = ctx.record(
@@ -178,4 +184,4 @@ def ensure_project(cfg: ProjectConfig, ctx: SharedContext) -> tuple[Action, str]
         "already up to date",
         project_id=project.id,
     )
-    return action, project.id
+    return action, project.id, was_disabled

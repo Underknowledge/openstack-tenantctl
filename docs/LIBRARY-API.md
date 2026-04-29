@@ -45,7 +45,7 @@ conn = openstack.connect(cloud="mycloud")
 ctx = SharedContext(conn=conn, dry_run=False)
 
 for cfg in all_projects:
-    action, project_id = ensure_project(cfg, ctx)
+    action, project_id, _was_disabled = ensure_project(cfg, ctx)
     if project_id:
         ensure_network_stack(cfg, project_id, ctx)
         ensure_quotas(cfg, project_id, ctx)
@@ -254,12 +254,14 @@ for action in result.actions:
 from src import ReconcileScope
 
 # Available scopes
-ReconcileScope.FIPS
-ReconcileScope.QUOTAS
-ReconcileScope.NETWORK
-ReconcileScope.SECURITY_GROUPS
-ReconcileScope.GROUP_ROLE_ASSIGNMENTS
-ReconcileScope.FEDERATION
+ReconcileScope.ROLES           # Group role assignments
+ReconcileScope.NETWORK         # Network stack + router IP tracking
+ReconcileScope.FIPS            # Floating IP pre-allocation
+ReconcileScope.PREALLOC_NETWORK  # Pre-allocated network resource
+ReconcileScope.QUOTAS          # Compute/network/storage quotas
+ReconcileScope.SECURITY_GROUPS # Baseline security group
+ReconcileScope.KEYSTONE_GROUPS # Keystone group lifecycle
+ReconcileScope.FEDERATION      # Federation mapping
 
 # Only update quotas
 client.run(only={ReconcileScope.QUOTAS})
@@ -347,10 +349,15 @@ Create or update Keystone project.
 ```python
 from src import ensure_project
 
-action, project_id = ensure_project(cfg, ctx)
+action, project_id, was_disabled = ensure_project(cfg, ctx)
 ```
 
-**Returns:** `tuple[Action, str]`
+**Returns:** `tuple[Action, str, bool | None]` — `was_disabled` is the
+project's `is_enabled` flag *before* this call attempted any update:
+`True` if it existed and was disabled, `False` if it existed and was
+enabled, `None` if there was no pre-existing project (created here, or
+unknown in offline mode). Use it to detect locked→present transitions
+without re-querying Keystone.
 
 ---
 
@@ -900,7 +907,7 @@ cfg = ProjectConfig.build(
 )
 
 # 3. Provision in correct order
-action, project_id = ensure_project(cfg, ctx)
+action, project_id, _was_disabled = ensure_project(cfg, ctx)
 print(f"{action.status}: Project - {action.details}")
 
 ensure_network_stack(cfg, project_id, ctx)

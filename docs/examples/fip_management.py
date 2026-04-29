@@ -34,7 +34,7 @@ def allocate_fips_with_reclamation(project_name: str, desired_fip_count: int) ->
     # Ensure network stack exists (FIP dependency)
     action, project_id = find_existing_project(cfg, ctx)
     if not project_id:
-        action, project_id = ensure_project(cfg, ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, ctx)
         if project_id:
             ensure_network_stack(cfg, project_id, ctx)
 

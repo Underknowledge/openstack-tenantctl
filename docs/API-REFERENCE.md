@@ -1075,18 +1075,23 @@ def find_existing_project(
 def ensure_project(
     cfg: ProjectConfig,
     ctx: SharedContext,
-) -> tuple[Action, str]:
+) -> tuple[Action, str, bool | None]:
     """Ensure the project exists with correct settings."""
 ```
 
-**Returns**: Tuple of `(Action, project_id)`.
+**Returns**: Tuple of `(Action, project_id, was_disabled)`.  `was_disabled`
+is the project's `is_enabled` flag *before* this call attempted any
+update: `True` if it existed and was disabled, `False` if it existed and
+was enabled, `None` if there was no pre-existing project (newly created
+here, or unknown in offline mode).  Callers use it to detect
+locked→present transitions without an extra API round-trip.
 
 **Behavior**:
 - Resolves `domain_id` (name or UUID) via Keystone
 - Find project by name in resolved domain
-- If not found: create, return (CREATED, project_id)
-- If found but needs update (description/enabled changed): update, return (UPDATED, project_id)
-- If up to date: return (SKIPPED, project_id)
+- If not found: create, return (CREATED, project_id, None)
+- If found but needs update (description/enabled changed): update, return (UPDATED, project_id, was_disabled)
+- If up to date: return (SKIPPED, project_id, was_disabled)
 
 **Config fields used**: `cfg.name`, `cfg.description`, `cfg.enabled`, `cfg.domain_id`
 

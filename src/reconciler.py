@@ -29,7 +29,6 @@ from src.resources.prealloc import ensure_preallocated_fips, ensure_preallocated
 from src.resources.project import (
     ensure_project,
     find_existing_project,
-    is_project_disabled,
 )
 from src.resources.quotas import ensure_quotas
 from src.resources.security_group import ensure_baseline_sg
@@ -151,14 +150,15 @@ def _persist_project_metadata(cfg: ProjectConfig, project_id: str, ctx: SharedCo
     ctx.state_store.save(state_key, ["metadata", "domain_id"], cfg.domain_id)
 
 
-def _should_unshelve(cfg: ProjectConfig, ctx: SharedContext) -> bool:
+def _should_unshelve(cfg: ProjectConfig, ctx: SharedContext, *, was_disabled: bool | None) -> bool:
     """Decide whether to unshelve servers for a present-state project.
 
     Two-layer detection:
     1. State store (primary): if ``last_reconciled_state`` exists, use it.
        Only unshelve when previous state was ``"locked"``.
-    2. API fallback: if no metadata available, check whether the project
-       is currently disabled in OpenStack (indicating a locked state).
+    2. API fallback: use ``was_disabled`` (the pre-update ``is_enabled``
+       flag observed by ``ensure_project``).  Re-enabling a previously
+       disabled project indicates a locked→present transition.
 
     In both cases, ``cfg.enabled`` must be ``True`` — we only unshelve
     when actually re-enabling the project.
@@ -173,8 +173,8 @@ def _should_unshelve(cfg: ProjectConfig, ctx: SharedContext) -> bool:
         if previous_state is not None:
             return bool(previous_state == "locked")
 
-    # Layer 2: API fallback — check if project is currently disabled.
-    return is_project_disabled(cfg, ctx)
+    # Layer 2: pre-update project state from ensure_project — no extra round-trip.
+    return bool(was_disabled)
 
 
 def _preflight_present(cfg: ProjectConfig, ctx: SharedContext) -> None:
@@ -207,13 +207,13 @@ def _reconcile_present(
     """
     _preflight_present(cfg, ctx)
 
-    # Unshelve only on full reconciliation (scopes=None).
-    should_unshelve = scopes is None and _should_unshelve(cfg, ctx)
-
-    _action, project_id = ensure_project(cfg, ctx)
+    _action, project_id, was_disabled = ensure_project(cfg, ctx)
     ctx.current_project_id = project_id
 
     _persist_project_metadata(cfg, project_id, ctx)
+
+    # Unshelve only on full reconciliation (scopes=None).
+    should_unshelve = scopes is None and _should_unshelve(cfg, ctx, was_disabled=was_disabled)
 
     def _in_scope(scope: ReconcileScope) -> bool:
         return scopes is None or scope in scopes
@@ -248,7 +248,7 @@ def _reconcile_locked(cfg: ProjectConfig, ctx: SharedContext) -> None:
     # Override enabled to False for locked state.
     cfg_locked = dataclasses.replace(cfg, enabled=False)
 
-    _action, project_id = ensure_project(cfg_locked, ctx)
+    _action, project_id, _was_disabled = ensure_project(cfg_locked, ctx)
     ctx.current_project_id = project_id
 
     _persist_project_metadata(cfg, project_id, ctx)

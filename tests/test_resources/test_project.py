@@ -38,7 +38,7 @@ class TestCreateNewProject:
         created_project.id = "proj-123"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
-        action, project_id = ensure_project(sample_project_cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, shared_ctx)
 
         assert action.status == ActionStatus.CREATED
         assert project_id == "proj-123"
@@ -70,7 +70,7 @@ class TestUpdateExistingProject:
         updated_project.id = "proj-123"
         shared_ctx.conn.identity.update_project.return_value = updated_project
 
-        action, project_id = ensure_project(sample_project_cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, shared_ctx)
 
         assert action.status == ActionStatus.UPDATED
         assert project_id == "proj-123"
@@ -96,7 +96,7 @@ class TestSkipMatchingProject:
         existing_project.is_enabled = True
         shared_ctx.conn.identity.find_project.return_value = existing_project
 
-        action, project_id = ensure_project(sample_project_cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, shared_ctx)
 
         assert action.status == ActionStatus.SKIPPED
         assert action.details == "already up to date"
@@ -117,7 +117,7 @@ class TestDryRunSkips:
         _stub_domain(dry_run_ctx.conn, "domain-123")
         dry_run_ctx.conn.identity.find_project.return_value = None
 
-        action, project_id = ensure_project(sample_project_cfg, dry_run_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, dry_run_ctx)
 
         assert action.status == ActionStatus.CREATED
         assert project_id == ""
@@ -142,7 +142,7 @@ class TestDryRunSkips:
         existing.is_enabled = True
         dry_run_ctx.conn.identity.find_project.return_value = existing
 
-        action, project_id = ensure_project(sample_project_cfg, dry_run_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, dry_run_ctx)
 
         assert action.status == ActionStatus.UPDATED
         assert project_id == "proj-123"
@@ -164,7 +164,7 @@ class TestDryRunSkips:
         existing.is_enabled = sample_project_cfg.enabled
         dry_run_ctx.conn.identity.find_project.return_value = existing
 
-        action, project_id = ensure_project(sample_project_cfg, dry_run_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, dry_run_ctx)
 
         assert action.status == ActionStatus.SKIPPED
         assert project_id == "proj-123"
@@ -178,7 +178,7 @@ class TestDryRunSkips:
         sample_project_cfg: ProjectConfig,
     ) -> None:
         """Offline mode → SKIPPED with no API calls."""
-        action, project_id = ensure_project(sample_project_cfg, offline_ctx)
+        action, project_id, _was_disabled = ensure_project(sample_project_cfg, offline_ctx)
 
         assert action.status == ActionStatus.SKIPPED
         assert project_id == ""
@@ -202,7 +202,7 @@ class TestDomainResolution:
         created_project.id = "proj-456"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
-        action, project_id = ensure_project(cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.CREATED
         assert project_id == "proj-456"
@@ -231,7 +231,7 @@ class TestDomainResolution:
         created_project.id = "proj-123"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
-        action, _project_id = ensure_project(cfg, shared_ctx)
+        action, _project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.CREATED
         shared_ctx.conn.identity.find_domain.assert_called_once_with("my-custom-domain")
@@ -257,7 +257,7 @@ class TestDomainResolution:
         created_project.id = "proj-123"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
-        _action, _project_id = ensure_project(cfg, shared_ctx)
+        _action, _project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         shared_ctx.conn.identity.find_domain.assert_called_once_with("default")
         shared_ctx.conn.identity.create_project.assert_called_once_with(
@@ -297,7 +297,7 @@ class TestDisabledProjects:
         created_project.id = "proj-disabled-123"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
-        action, project_id = ensure_project(cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.CREATED
         assert project_id == "proj-disabled-123"
@@ -327,7 +327,7 @@ class TestDisabledProjects:
         updated_project.id = "proj-123"
         shared_ctx.conn.identity.update_project.return_value = updated_project
 
-        action, project_id = ensure_project(cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.UPDATED
         assert project_id == "proj-123"
@@ -356,7 +356,7 @@ class TestDisabledProjects:
         updated_project.id = "proj-123"
         shared_ctx.conn.identity.update_project.return_value = updated_project
 
-        action, project_id = ensure_project(cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.UPDATED
         assert project_id == "proj-123"
@@ -381,7 +381,7 @@ class TestDisabledProjects:
         existing_project.is_enabled = False
         shared_ctx.conn.identity.find_project.return_value = existing_project
 
-        action, project_id = ensure_project(cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.SKIPPED
         assert project_id == "proj-123"
@@ -411,7 +411,7 @@ class TestProjectNameCharacters:
         created_project.id = "proj-123"
         shared_ctx.conn.identity.create_project.return_value = created_project
 
-        action, project_id = ensure_project(cfg, shared_ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, shared_ctx)
 
         assert action.status == ActionStatus.CREATED
         assert project_id == "proj-123"
