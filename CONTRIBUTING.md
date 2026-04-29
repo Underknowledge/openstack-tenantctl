@@ -280,7 +280,7 @@ Fixes #78
 - Source code (`src/**/*.py`)
 - Tests (`tests/**/*.py`)
 - Documentation (`docs/**/*.md`, `*.md`)
-- Configuration examples (`config-sample/defaults.yaml`, `config-sample/projects/*.yaml`)
+- Sample configuration (bundled as package data in `src/sample_config/`)
 - Build configuration (`Makefile`, `pyproject.toml`)
 - Git configuration (`.gitignore`, `.gitattributes`)
 
@@ -330,13 +330,13 @@ git diff --cached --name-only | grep -E "(clouds\.yaml|\.env|credentials)"
 
 ### Handling Configuration Files
 
-**Example configurations** (tracked in Git):
-- `config-sample/defaults.yaml` - Default configuration template
-- `config-sample/projects/*.yaml` - Example project configurations
+**Sample configurations** (tracked in Git, bundled in wheel):
+- `src/sample_config/defaults.yaml` - Default configuration template
+- `src/sample_config/projects/*.yaml` - Example project configurations
 
 **Local configurations** (NOT tracked):
-- Create your own `config/` directory for local testing
-- Copy files from `config-sample/` as a starting point
+- Run `tenantctl init` to bootstrap a `config/` directory
+- Or create your own `config/` directory for local testing
 - The `config/` directory is automatically ignored by `.gitignore`
 
 ### Pre-Commit Checks

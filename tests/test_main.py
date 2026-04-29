@@ -434,3 +434,38 @@ class TestOnlyFlag:
         exit_code = main(["--config-dir", str(mock_config_dir), "--dry-run", "--only", "fips"])
 
         assert exit_code == 1
+
+
+class TestInitSubcommand:
+    """Tests for ``tenantctl init``."""
+
+    def test_init_creates_config(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        """Should bootstrap a config directory with sample files."""
+        target = tmp_path / "config"
+
+        exit_code = main(["init", "--config-dir", str(target)])
+
+        assert exit_code == 0
+        assert (target / "defaults.yaml").exists()
+        assert (target / "projects" / "minimal.yaml").exists()
+        captured = capsys.readouterr()
+        assert "initialised" in captured.out
+
+    def test_init_refuses_overwrite(self, tmp_path: Path) -> None:
+        """Should return 1 when target already contains YAML files."""
+        target = tmp_path / "config"
+        target.mkdir()
+        (target / "existing.yaml").write_text("name: foo\n")
+
+        exit_code = main(["init", "--config-dir", str(target)])
+
+        assert exit_code == 1
+
+    def test_init_default_config_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should default to config/ in the current directory."""
+        monkeypatch.chdir(tmp_path)
+
+        exit_code = main(["init"])
+
+        assert exit_code == 0
+        assert (tmp_path / "config" / "defaults.yaml").exists()

@@ -43,6 +43,7 @@ openstack-tenantctl/
 │   ├── client.py                   # Library API: TenantCtl class, RunResult
 │   ├── context.py                  # Context-building helpers (external networks, federation)
 │   ├── main.py                     # Thin CLI adapter delegating to TenantCtl
+│   ├── scaffold.py                 # Bootstrap: write_sample_config(), used by init subcommand
 │   ├── config_loader.py            # YAML loading & deep-merge
 │   ├── config_resolver.py          # Subnet auto-calculation, placeholder substitution
 │   ├── config_validator.py         # Fail-fast validation
@@ -1474,7 +1475,20 @@ def main(argv: list[str] | None = None) -> int:
     """Main entry point. Returns 0 on success, 1 on failure."""
 ```
 
-**Description**: Thin CLI adapter. Parses arguments, creates a `TenantCtl.from_config_dir()` instance, calls `run()`, and prints the summary. All pipeline logic lives in `TenantCtl`.
+**Description**: Thin CLI adapter. Dispatches to either the `init` subcommand or the default `run` pipeline based on arguments. All pipeline logic lives in `TenantCtl`; scaffold logic lives in `scaffold.py`.
+
+**Subcommands**:
+
+#### `init` subcommand
+
+Bootstraps a starter config directory by copying bundled sample files (`defaults.yaml`, `projects/minimal.yaml`, `federation_static*.json`) into the target path. Raises `SystemExit(1)` if any YAML file already exists (safe to re-run without overwriting).
+
+**Arguments**:
+- `--config-dir PATH`: Target directory (default: `config/`)
+
+**Delegation**: Calls `write_sample_config(Path(args.config_dir))` from `src.scaffold`.
+
+#### Default (`run`) pipeline
 
 **CLI Arguments**:
 - `--config-dir`: Path to config directory (default: `config/`)

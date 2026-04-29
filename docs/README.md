@@ -150,6 +150,11 @@ export OS_PROJECT_DOMAIN_NAME=Default
 ## CLI Reference
 
 ```bash
+tenantctl init [--config-dir PATH]
+
+  Bootstrap a starter config directory from bundled sample files.
+  --config-dir PATH    Target directory (default: config/)
+
 tenantctl [OPTIONS]
 
 Options:
@@ -321,7 +326,7 @@ present ←→ locked → absent
 
 ```bash
 # 1. Copy a template
-cp config-sample/projects/dev.yaml config/projects/mynewproject.yaml
+cp src/sample_config/projects/dev.yaml config/projects/mynewproject.yaml
 
 # 2. Edit: set name, resource_prefix, network.subnet.cidr (must be unique)
 vim config/projects/mynewproject.yaml
