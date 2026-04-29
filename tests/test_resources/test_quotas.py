@@ -831,14 +831,14 @@ class TestQuotaUnits:
         self,
         shared_ctx: SharedContext,
     ) -> None:
-        """RAM quota accepts '50GB' and converts to 50000 MB for Nova API."""
+        """RAM quota accepts '50GB' and converts to 47684 MiB for Nova API."""
         cfg = ProjectConfig.from_dict(
             {
                 "name": "test_project",
                 "resource_prefix": "test",
                 "quotas": {
                     "compute": {
-                        "ram": "50GB",  # Decimal: 50GB = 50000 MB
+                        "ram": "50GB",  # Decimal: 50GB = 47684 MiB
                         "cores": 20,
                     },
                     "network": {"subnets": 1},
@@ -847,7 +847,7 @@ class TestQuotaUnits:
             }
         )
 
-        # Compute: ram differs (current 51200 MB != desired 50000 MB)
+        # Compute: ram differs (current 51200 MiB != desired 47684 MiB)
         compute_quota = MagicMock()
         compute_quota.ram = 51200
         compute_quota.cores = 20
@@ -879,10 +879,10 @@ class TestQuotaUnits:
         assert len(updated) == 1
         assert updated[0].resource_type == "compute_quota"
 
-        # Verify API received 50000 MB (converted from "50GB")
+        # Verify API received 47684 MiB (converted from "50GB")
         shared_ctx.conn.compute.update_quota_set.assert_called_once_with(
             "proj-123",
-            ram=50000,
+            ram=47684,
             cores=20,
         )
 
@@ -890,14 +890,14 @@ class TestQuotaUnits:
         self,
         shared_ctx: SharedContext,
     ) -> None:
-        """RAM quota accepts '50GiB' and converts to 53687 MB for Nova API."""
+        """RAM quota accepts '50GiB' and converts to 51200 MiB for Nova API."""
         cfg = ProjectConfig.from_dict(
             {
                 "name": "test_project",
                 "resource_prefix": "test",
                 "quotas": {
                     "compute": {
-                        "ram": "50GiB",  # Binary: 50GiB ≈ 53687 MB
+                        "ram": "50GiB",  # Binary: 50GiB = 51200 MiB
                         "cores": 20,
                     },
                     "network": {"subnets": 1},
@@ -906,7 +906,7 @@ class TestQuotaUnits:
             }
         )
 
-        # Compute: ram differs
+        # Compute: ram matches (current 51200 MiB == desired 51200 MiB)
         compute_quota = MagicMock()
         compute_quota.ram = 51200
         compute_quota.cores = 20
@@ -925,16 +925,9 @@ class TestQuotaUnits:
 
         actions = ensure_quotas(cfg, "proj-123", shared_ctx)
 
-        # Only compute should be updated
-        updated = [a for a in actions if a.status == ActionStatus.UPDATED]
-        assert len(updated) == 1
-
-        # Verify API received 53687 MB (converted from "50GiB")
-        shared_ctx.conn.compute.update_quota_set.assert_called_once_with(
-            "proj-123",
-            ram=53687,
-            cores=20,
-        )
+        # All quotas match now (50GiB = 51200 MiB = current), so all skipped
+        assert all(a.status == ActionStatus.SKIPPED for a in actions)
+        shared_ctx.conn.compute.update_quota_set.assert_not_called()
 
     def test_storage_with_tb_unit(
         self,
@@ -1086,7 +1079,7 @@ class TestQuotaUnits:
         # Verify compute: ram converted, cores/instances pass through
         shared_ctx.conn.compute.update_quota_set.assert_called_once_with(
             "proj-123",
-            ram=100000,  # "100GB" → 100000 MB
+            ram=95367,  # "100GB" → 95367 MiB
             cores=20,
             instances=10,
         )

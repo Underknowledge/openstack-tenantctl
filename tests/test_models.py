@@ -743,12 +743,12 @@ class TestQuotaConfigValidate:
         assert "str" in errors[0]  # Error includes the actual type
 
     def test_ram_with_valid_unit(self) -> None:
-        """RAM quota accepts unit strings and converts to MB."""
+        """RAM quota accepts unit strings and converts to MiB."""
         data = {"compute": {"ram": "50GB", "cores": 20}}
         errors: list[str] = []
         result = QuotaConfig.validate(data, errors, "test")
         assert errors == []
-        assert result.compute["ram"] == 50000  # "50GB" → 50000 MB
+        assert result.compute["ram"] == 47684  # "50GB" → 47684 MiB
         assert result.compute["cores"] == 20
 
     def test_storage_with_valid_unit(self) -> None:
