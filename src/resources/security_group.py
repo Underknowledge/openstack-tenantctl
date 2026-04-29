@@ -207,10 +207,11 @@ def ensure_baseline_sg(
             )
 
         # For non-default SGs, skip
+        project_label = f"{cfg.name} ({project_id})"
         logger.debug(
             "Security group %s already exists for project %s, skipping",
             sg_name,
-            project_id,
+            project_label,
         )
         return ctx.record(
             ActionStatus.SKIPPED,

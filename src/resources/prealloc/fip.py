@@ -96,7 +96,9 @@ def _raise_fip_quota(conn: Connection, project_id: str, count: int) -> None:
 
 
 @retry()
-def _set_fip_quota(conn: Connection, project_id: str, desired_count: int) -> tuple[bool, int | None]:
+def _set_fip_quota(
+    conn: Connection, project_id: str, desired_count: int, project_label: str = ""
+) -> tuple[bool, int | None]:
     """Set floating IP quota to the desired count.
 
     If the quota cannot be set below current usage (partial scale-down with
@@ -108,12 +110,13 @@ def _set_fip_quota(conn: Connection, project_id: str, desired_count: int) -> tup
         current usage instead of desired count. fallback_quota is the usage
         value if we had to fall back, None otherwise.
     """
+    label = project_label or project_id
     try:
         conn.network.update_quota(project_id, floating_ips=desired_count)
         logger.info(
             "Set floating_ips quota to %d for project %s",
             desired_count,
-            project_id,
+            label,
         )
         return (True, None)
     except openstack.exceptions.BadRequestException:
@@ -122,7 +125,7 @@ def _set_fip_quota(conn: Connection, project_id: str, desired_count: int) -> tup
             "Cannot set floating_ips quota to %d for project %s - "
             "quota cannot be less than current usage, reading usage and setting to that",
             desired_count,
-            project_id,
+            label,
         )
         quota = conn.network.get_quota(project_id, details=True)
         detail = getattr(quota, "floating_ips", None)
@@ -133,7 +136,7 @@ def _set_fip_quota(conn: Connection, project_id: str, desired_count: int) -> tup
             "Fallback: set floating_ips quota to %d (current usage) for project %s - "
             "project owner must free up %d FIP(s) before quota can be reduced to %d",
             used,
-            project_id,
+            label,
             used - desired_count,
             desired_count,
         )
@@ -146,6 +149,7 @@ def _set_fip_quota_and_record(
     ctx: SharedContext,
     desired_count: int,
     actual_count: int,
+    project_label: str = "",
 ) -> Action | None:
     """Set FIP quota and record a FAILED action if quota exceeds desired.
 
@@ -158,7 +162,7 @@ def _set_fip_quota_and_record(
         ``None`` on success at the desired count.
     """
     effective_quota = max(desired_count, actual_count)
-    success, fallback_quota = _set_fip_quota(conn, project_id, effective_quota)
+    success, fallback_quota = _set_fip_quota(conn, project_id, effective_quota, project_label)
 
     if not success:
         # Race condition: even max(desired, actual) was rejected.
@@ -300,6 +304,7 @@ def _reconcile_fip_drift(
     2. Reclaim missing FIPs (in config but deleted from OpenStack).
     3. Record permanently lost FIPs in ``released_fips``.
     """
+    project_label = f"{cfg.name} ({project_id})"
     missing, untracked = _detect_fip_drift(config_fips, openstack_fips)
     actions: list[Action] = []
 
@@ -359,7 +364,7 @@ def _reconcile_fip_drift(
 
     logger.warning(
         "FIP drift detected for project %s: %d FIP(s) missing from OpenStack",
-        project_id,
+        project_label,
         len(missing),
     )
 
@@ -394,7 +399,7 @@ def _reconcile_fip_drift(
                     "Reclaimed FIP %s (new id=%s) for project %s",
                     entry.address,
                     fip.id,
-                    project_id,
+                    project_label,
                 )
             except openstack.exceptions.ConflictException:
                 newly_released.append(
@@ -418,7 +423,7 @@ def _reconcile_fip_drift(
                 logger.warning(
                     "Cannot reclaim FIP %s for project %s — address taken",
                     entry.address,
-                    project_id,
+                    project_label,
                 )
     else:
         # Reclamation disabled — release all missing FIPs without attempting
@@ -446,7 +451,7 @@ def _reconcile_fip_drift(
             logger.info(
                 "FIP %s missing for project %s — recorded as released " "(reclaim_floating_ips disabled)",
                 entry.address,
-                project_id,
+                project_label,
             )
 
     # Update preallocated_fips: remove missing, add reclaimed (and adopted).
@@ -477,6 +482,7 @@ def _scale_down_fips(
     Unused FIPs (``port_id is None``) are deleted first.  If in-use FIPs
     prevent reaching the desired count, a FAILED action is recorded.
     """
+    project_label = f"{cfg.name} ({project_id})"
     excess = existing_count - desired_count
     unused = [f for f in existing_fips if f.port_id is None]
 
@@ -490,7 +496,7 @@ def _scale_down_fips(
             "Released unused FIP %s (%s) for project %s",
             fip.floating_ip_address,
             fip.id,
-            project_id,
+            project_label,
         )
         actions.append(
             ctx.record(
@@ -508,7 +514,7 @@ def _scale_down_fips(
         logger.warning(
             "Cannot release %d in-use FIP(s) for project %s — " "%d excess FIP(s) remain above desired count %d",
             remaining_excess,
-            project_id,
+            project_label,
             remaining_excess,
             desired_count,
         )
@@ -535,6 +541,7 @@ def _scale_down_fips(
         ctx,
         desired_count,
         remaining_count,
+        project_label,
     )
     if quota_action:
         actions.append(quota_action)
@@ -556,11 +563,12 @@ def _scale_up_fips(
 
     Raises quota → allocates → persists → sets quota via helper.
     """
+    project_label = f"{cfg.name} ({project_id})"
     to_allocate = desired_count - existing_count
 
     # Raise quota to allow allocation.
     _raise_fip_quota(ctx.conn, project_id, desired_count)
-    logger.info("Raised floating_ips quota to %d for project %s", desired_count, project_id)
+    logger.info("Raised floating_ips quota to %d for project %s", desired_count, project_label)
 
     # Allocate the missing FIPs.
     actions: list[Action] = []
@@ -572,7 +580,7 @@ def _scale_up_fips(
             "Allocated FIP %s (%s) for project %s [%d/%d]",
             fip.floating_ip_address,
             fip.id,
-            project_id,
+            project_label,
             idx + 1,
             to_allocate,
         )
@@ -598,6 +606,7 @@ def _scale_up_fips(
         ctx,
         desired_count,
         actual_count,
+        project_label,
     )
     if quota_action:
         actions.append(quota_action)
@@ -664,6 +673,7 @@ def ensure_preallocated_fips(
             )
         ]
 
+    project_label = f"{cfg.name} ({project_id})"
     desired_count: int = net_quotas.get("floating_ips", 0)
     if desired_count == 0:
         return [
@@ -686,7 +696,7 @@ def ensure_preallocated_fips(
         logger.warning(
             "Project %s router uses external network %s, "
             "but config resolves to %s — allocating FIPs on router network",
-            project_id,
+            project_label,
             router_ext_net_id,
             external_net_id,
         )
@@ -696,7 +706,7 @@ def ensure_preallocated_fips(
         logger.warning(
             "Project %s router uses external subnet %s, "
             "but config resolves to %s — allocating FIPs on router subnet",
-            project_id,
+            project_label,
             router_ext_subnet_id,
             external_subnet_id,
         )
@@ -705,7 +715,7 @@ def ensure_preallocated_fips(
     if not external_net_id:
         logger.warning(
             "Skipping FIP allocation for project %s — no external network available",
-            project_id,
+            project_label,
         )
         return [
             ctx.record(
@@ -730,7 +740,7 @@ def ensure_preallocated_fips(
         logger.warning(
             "Project %s has %d FIP(s) from foreign external network(s) %s "
             "(configured: %s) — these will not be managed",
-            project_id,
+            project_label,
             len(foreign_fips),
             foreign_nets,
             external_net_id,
@@ -807,10 +817,11 @@ def ensure_preallocated_fips(
             ctx,
             desired_count,
             existing_count,
+            project_label,
         )
         logger.debug(
             "Project %s already has %d FIP(s) (desired %d), quota set",
-            project_id,
+            project_label,
             existing_count,
             desired_count,
         )

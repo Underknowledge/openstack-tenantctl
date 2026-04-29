@@ -54,7 +54,7 @@ def shelve_all_servers(
 
     Returns a list of actions taken.
     """
-    project_name = cfg.name
+    project_label = f"{cfg.name} ({project_id})"
 
     # Offline mode: no connection available.
     if ctx.conn is None:
@@ -114,7 +114,7 @@ def shelve_all_servers(
                     "Shelved server %s (%s) in project %s",
                     name,
                     server_id,
-                    project_name,
+                    project_label,
                 )
                 actions.append(
                     ctx.record(
@@ -129,7 +129,7 @@ def shelve_all_servers(
                     "Failed to shelve server %s (%s) in project %s (%s): %s",
                     name,
                     server_id,
-                    project_name,
+                    project_label,
                     type(exc).__name__,
                     exc,
                     exc_info=True,
@@ -169,7 +169,7 @@ def unshelve_all_servers(
 
     Returns a list of actions taken.
     """
-    project_name = cfg.name
+    project_label = f"{cfg.name} ({project_id})"
 
     # Offline mode: no connection available.
     if ctx.conn is None:
@@ -232,7 +232,7 @@ def unshelve_all_servers(
                     "Unshelved server %s (%s) in project %s",
                     name,
                     server_id,
-                    project_name,
+                    project_label,
                 )
                 actions.append(
                     ctx.record(
@@ -247,7 +247,7 @@ def unshelve_all_servers(
                     "Failed to unshelve server %s (%s) in project %s (%s): %s",
                     name,
                     server_id,
-                    project_name,
+                    project_label,
                     type(exc).__name__,
                     exc,
                     exc_info=True,

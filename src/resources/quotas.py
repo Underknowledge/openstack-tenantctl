@@ -39,6 +39,7 @@ def _ensure_compute_quotas(
     ctx: SharedContext,
 ) -> list[Action]:
     """Ensure compute quotas match the desired configuration."""
+    project_label = f"{cfg.name} ({project_id})"
     if ctx.conn is None:
         msg = "ctx.conn is None — not available in offline mode"
         raise DryRunUnsupportedError(msg)
@@ -64,7 +65,7 @@ def _ensure_compute_quotas(
                         "current usage is %d, clamping to usage",
                         k,
                         desired[k],
-                        project_id,
+                        project_label,
                         used,
                     )
                     desired[k] = used
@@ -75,7 +76,7 @@ def _ensure_compute_quotas(
         if diff:
             ctx.conn.compute.update_quota_set(project_id, **desired)
             details = ", ".join(f"{k}={v}" for k, v in sorted(desired.items()))
-            logger.info("Updated compute quotas for %s: %s", project_id, details)
+            logger.info("Updated compute quotas for %s: %s", project_label, details)
             return [
                 ctx.record(ActionStatus.UPDATED, "compute_quota", "", details),
             ]
@@ -90,7 +91,7 @@ def _ensure_compute_quotas(
             )
         ]
 
-    logger.debug("Compute quotas for %s already up to date", project_id)
+    logger.debug("Compute quotas for %s already up to date", project_label)
     current_details = ", ".join(f"{k}={current[k]}" for k in sorted(desired))
     return [
         ctx.record(
@@ -123,7 +124,7 @@ def _ensure_network_quotas(
     if cfg.quotas is None:
         msg = "cfg.quotas is None — should have been checked by caller"
         raise ProvisionerError(msg)
-    project_label = cfg.name
+    project_label = f"{cfg.name} ({project_id})"
     network_cfg: dict[str, int] = dict(cfg.quotas.network)
 
     # Split network config into Neutron vs Load Balancer quotas
@@ -177,7 +178,7 @@ def _ensure_network_quotas(
                             "current usage is %d, clamping to usage",
                             k,
                             neutron_quotas[k],
-                            project_id,
+                            project_label,
                             used,
                         )
                         neutron_quotas[k] = used
@@ -289,6 +290,7 @@ def _ensure_block_storage_quotas(
     Cinder resets unspecified keys, so we always read current quotas first,
     overlay desired keys, and send all keys back.
     """
+    project_label = f"{cfg.name} ({project_id})"
     if ctx.conn is None:
         msg = "ctx.conn is None — not available in offline mode"
         raise DryRunUnsupportedError(msg)
@@ -316,7 +318,7 @@ def _ensure_block_storage_quotas(
                         "current usage is %d, clamping to usage",
                         k,
                         desired[k],
-                        project_id,
+                        project_label,
                         used,
                     )
                     desired[k] = used
@@ -342,7 +344,7 @@ def _ensure_block_storage_quotas(
             merged.pop("project_id", None)
             ctx.conn.block_storage.update_quota_set(project_id, **merged)
             details = ", ".join(f"{k}={v}" for k, v in sorted(desired.items()))
-            logger.info("Updated block_storage quotas for %s: %s", project_id, details)
+            logger.info("Updated block_storage quotas for %s: %s", project_label, details)
             return [
                 ctx.record(ActionStatus.UPDATED, "block_storage_quota", "", details),
             ]
@@ -357,7 +359,7 @@ def _ensure_block_storage_quotas(
             )
         ]
 
-    logger.debug("Block-storage quotas for %s already up to date", project_id)
+    logger.debug("Block-storage quotas for %s already up to date", project_label)
     current_details = ", ".join(f"{k}={current[k]}" for k in sorted(desired))
     return [
         ctx.record(
@@ -396,6 +398,7 @@ def ensure_quotas(
     if ctx.conn is None:
         return [ctx.record(ActionStatus.SKIPPED, "quotas", "", "would set quotas (offline)")]
 
+    project_label = f"{cfg.name} ({project_id})"
     actions: list[Action] = []
     actions.extend(_ensure_compute_quotas(cfg, project_id, ctx))
     actions.extend(_ensure_network_quotas(cfg, project_id, ctx))
@@ -405,7 +408,7 @@ def ensure_quotas(
     except Exception as exc:
         logger.warning(
             "Block-storage quotas skipped for %s (%s): %s",
-            project_id,
+            project_label,
             type(exc).__name__,
             exc,
             exc_info=True,
