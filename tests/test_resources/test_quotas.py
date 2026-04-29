@@ -126,6 +126,22 @@ class TestEnsureQuotas:
         dry_run_ctx.conn.compute.update_quota_set.assert_not_called()
         dry_run_ctx.conn.block_storage.update_quota_set.assert_not_called()
 
+    def test_dry_run_nonexistent_project_skips_api(
+        self,
+        dry_run_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """Dry-run for project that doesn't exist yet → CREATED, no API calls."""
+        actions = ensure_quotas(sample_project_cfg, "", dry_run_ctx)
+
+        assert len(actions) == 1
+        assert actions[0].status == ActionStatus.CREATED
+        assert "not yet created" in actions[0].details
+        # No API calls should be made
+        dry_run_ctx.conn.compute.get_quota_set.assert_not_called()
+        dry_run_ctx.conn.network.get_quota.assert_not_called()
+        dry_run_ctx.conn.block_storage.get_quota_set.assert_not_called()
+
     def test_offline_dry_run_skips(
         self,
         offline_ctx: SharedContext,
