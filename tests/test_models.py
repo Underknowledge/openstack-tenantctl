@@ -1105,6 +1105,52 @@ class TestFederationConfigValidate:
         assert result.group_prefix == "/custom/path/"
 
 
+class TestFederationConfigDomain:
+    """FederationConfig.domain three-state field (from_dict + validate)."""
+
+    def test_from_dict_absent_defaults_to_empty(self) -> None:
+        fed = FederationConfig.from_dict({})
+        assert fed.domain == ""
+
+    def test_from_dict_explicit_string(self) -> None:
+        fed = FederationConfig.from_dict({"domain": "MyDomain"})
+        assert fed.domain == "MyDomain"
+
+    def test_from_dict_null_gives_none(self) -> None:
+        fed = FederationConfig.from_dict({"domain": None})
+        assert fed.domain is None
+
+    def test_from_dict_empty_string(self) -> None:
+        fed = FederationConfig.from_dict({"domain": ""})
+        assert fed.domain == ""
+
+    def test_validate_absent_defaults_to_empty(self) -> None:
+        errors: list[str] = []
+        result = FederationConfig.validate({}, errors, "test")
+        assert result.domain == ""
+        assert errors == []
+
+    def test_validate_explicit_string(self) -> None:
+        errors: list[str] = []
+        result = FederationConfig.validate({"domain": "MyDomain"}, errors, "test")
+        assert result.domain == "MyDomain"
+        assert errors == []
+
+    def test_validate_null_gives_none(self) -> None:
+        errors: list[str] = []
+        result = FederationConfig.validate({"domain": None}, errors, "test")
+        assert result.domain is None
+        assert errors == []
+
+    def test_validate_non_string_non_null_rejected(self) -> None:
+        errors: list[str] = []
+        result = FederationConfig.validate({"domain": 42}, errors, "test")
+        assert len(errors) == 1
+        assert "federation.domain must be a string or null" in errors[0]
+        assert "int" in errors[0]
+        assert result.domain == ""
+
+
 class TestFederationRoleAssignmentKeystoneGroup:
     """FederationRoleAssignment with keystone_group field."""
 
@@ -1172,6 +1218,108 @@ class TestFederationConfigModeValidation:
         assert len(errors) == 1
         assert "federation.mode must be one of" in errors[0]
         assert "'invalid'" in errors[0]
+
+
+class TestFederationRoleAssignmentListMode:
+    """FederationRoleAssignment.validate() with list mode."""
+
+    def test_validate_list_mode(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": ["project", "group"]}
+        errors: list[str] = []
+        result = FederationRoleAssignment.validate(data, errors, "test")
+        assert errors == []
+        assert result.mode == ["project", "group"]
+
+    def test_validate_single_element_list(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": ["group"]}
+        errors: list[str] = []
+        result = FederationRoleAssignment.validate(data, errors, "test")
+        assert errors == []
+        assert result.mode == ["group"]
+
+    def test_validate_empty_list_rejected(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": []}
+        errors: list[str] = []
+        FederationRoleAssignment.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "mode list must not be empty" in errors[0]
+
+    def test_validate_invalid_element_rejected(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": ["project", "invalid"]}
+        errors: list[str] = []
+        FederationRoleAssignment.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "must contain only values from" in errors[0]
+
+    def test_validate_duplicate_rejected(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": ["project", "project"]}
+        errors: list[str] = []
+        FederationRoleAssignment.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "must not contain duplicates" in errors[0]
+
+    def test_validate_non_string_non_list_rejected(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": 42}
+        errors: list[str] = []
+        FederationRoleAssignment.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "must be a string, list of strings, or empty" in errors[0]
+
+    def test_from_dict_list_mode(self) -> None:
+        data: dict[str, Any] = {"idp_group": "devs", "roles": ["member"], "mode": ["project", "group"]}
+        result = FederationRoleAssignment.from_dict(data)
+        assert result.mode == ["project", "group"]
+
+
+class TestFederationConfigListMode:
+    """FederationConfig.validate() with list mode."""
+
+    def test_validate_list_mode(self) -> None:
+        data: dict[str, Any] = {"mode": ["project", "group"]}
+        errors: list[str] = []
+        result = FederationConfig.validate(data, errors, "test")
+        assert errors == []
+        assert result.mode == ["project", "group"]
+
+    def test_validate_single_element_list(self) -> None:
+        data: dict[str, Any] = {"mode": ["group"]}
+        errors: list[str] = []
+        result = FederationConfig.validate(data, errors, "test")
+        assert errors == []
+        assert result.mode == ["group"]
+
+    def test_validate_empty_list_rejected(self) -> None:
+        data: dict[str, Any] = {"mode": []}
+        errors: list[str] = []
+        FederationConfig.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "federation.mode list must not be empty" in errors[0]
+
+    def test_validate_invalid_element_rejected(self) -> None:
+        data: dict[str, Any] = {"mode": ["project", "invalid"]}
+        errors: list[str] = []
+        FederationConfig.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "must contain only values from" in errors[0]
+
+    def test_validate_duplicate_rejected(self) -> None:
+        data: dict[str, Any] = {"mode": ["project", "project"]}
+        errors: list[str] = []
+        FederationConfig.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "must not contain duplicates" in errors[0]
+
+    def test_validate_non_string_non_list_rejected(self) -> None:
+        data: dict[str, Any] = {"mode": 42}
+        errors: list[str] = []
+        FederationConfig.validate(data, errors, "test")
+        assert len(errors) == 1
+        assert "must be a string, list of strings, or empty" in errors[0]
+
+    def test_from_dict_list_mode(self) -> None:
+        data: dict[str, Any] = {"mode": ["project", "group"]}
+        result = FederationConfig.from_dict(data)
+        assert result.mode == ["project", "group"]
 
 
 class TestProjectConfigValidate:

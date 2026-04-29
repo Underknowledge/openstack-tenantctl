@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from src.models.federation import FederationRoleAssignment
 
 from src.models import GroupRoleAssignment, ProjectConfig, ProjectState
+from src.models.federation import _normalize_modes
 from src.utils import Action, ActionStatus, SharedContext, identity_v3, retry
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,13 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
         group_prefix: str = federation_cfg.group_prefix
         role_assignments = federation_cfg.role_assignments
 
-        domain_name: str | None = project_cfg.domain
+        fed_domain = federation_cfg.domain
+        if fed_domain == "":
+            domain_name: str | None = project_cfg.domain  # inherit
+        elif fed_domain is None:
+            domain_name = None  # suppress
+        else:
+            domain_name = fed_domain  # override
         user_type: str = federation_cfg.user_type
 
         for assignment in role_assignments:
@@ -96,31 +103,25 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
             if user_type:
                 user_element["type"] = user_type
 
-            if assignment.mode == "group":
-                ks_group_name = _derive_group_name(project_name, assignment, federation_cfg.group_name_separator)
-                group_element: dict[str, Any] = {
-                    "group": {
-                        "name": ks_group_name,
-                        "domain": {"name": domain_name or "Default"},
+            modes = _normalize_modes(assignment.mode)
+            local_elements: list[dict[str, Any]] = [{"user": user_element}]
+
+            if "group" in modes:
+                ks_group_name = _derive_group_name(
+                    project_name,
+                    assignment,
+                    federation_cfg.group_name_separator,
+                )
+                local_elements.append(
+                    {
+                        "group": {
+                            "name": ks_group_name,
+                            "domain": {"name": domain_name or "Default"},
+                        }
                     }
-                }
-                rule: dict[str, Any] = {
-                    "local": [
-                        {"user": user_element},
-                        group_element,
-                    ],
-                    "remote": [
-                        {"type": "OIDC-preferred_username"},
-                        {"type": "OIDC-email"},
-                        {"type": "HTTP_OIDC_ISS", "any_one_of": [issuer]},
-                        {
-                            "type": "OIDC-groups",
-                            "any_one_of": group_paths,
-                        },
-                    ],
-                }
-            else:
-                # Build projects element (add domain only when domain is set)
+                )
+
+            if "project" in modes:
                 projects_element: dict[str, Any] = {
                     "projects": [
                         {
@@ -131,22 +132,17 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
                 }
                 if domain_name is not None:
                     projects_element["domain"] = {"name": domain_name}
+                local_elements.append(projects_element)
 
-                rule = {
-                    "local": [
-                        {"user": user_element},
-                        projects_element,
-                    ],
-                    "remote": [
-                        {"type": "OIDC-preferred_username"},
-                        {"type": "OIDC-email"},
-                        {"type": "HTTP_OIDC_ISS", "any_one_of": [issuer]},
-                        {
-                            "type": "OIDC-groups",
-                            "any_one_of": group_paths,
-                        },
-                    ],
-                }
+            rule: dict[str, Any] = {
+                "local": local_elements,
+                "remote": [
+                    {"type": "OIDC-preferred_username"},
+                    {"type": "OIDC-email"},
+                    {"type": "HTTP_OIDC_ISS", "any_one_of": [issuer]},
+                    {"type": "OIDC-groups", "any_one_of": group_paths},
+                ],
+            }
             # Sort key: use first resolved path (list is already sorted)
             rules.append((project_name, group_paths[0], rule))
 
@@ -272,7 +268,7 @@ def augment_group_role_assignments(cfg: ProjectConfig) -> ProjectConfig:
         return cfg
     derived: list[GroupRoleAssignment] = []
     for assignment in cfg.federation.role_assignments:
-        if assignment.mode != "group":
+        if "group" not in _normalize_modes(assignment.mode):
             continue
         ks_group = _derive_group_name(cfg.name, assignment, cfg.federation.group_name_separator)
         derived.append(GroupRoleAssignment(group=ks_group, roles=list(assignment.roles)))

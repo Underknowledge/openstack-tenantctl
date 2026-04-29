@@ -1031,14 +1031,14 @@ federation:
   mapping_id: <string>          # REQUIRED: Federation mapping ID
   group_prefix: <string>        # REQUIRED: Group path prefix
   user_type: <string>           # Optional: User type in mapping rules (e.g., "ephemeral")
-  mode: <string>                # Optional: Default mode for entries — "project" (default) or "group"
+  mode: <string | list[string]>  # Optional: Default mode — "project" (default), "group", or ["project", "group"]
   group_name_separator: <string> # Optional: Separator for auto-derived group names (default: "-")
   role_assignments:             # REQUIRED: Role mappings for IdP groups
     - idp_group: <string | list[string]>  # IdP group name(s) (short or absolute path)
       roles:                    # List of OpenStack roles
         - <string>
       keystone_group: <string>  # Optional: Explicit Keystone group name override (group mode)
-      mode: <string>            # Optional: Per-entry override — "project" or "group"
+      mode: <string | list[string]>  # Optional: Per-entry override — "project", "group", or ["project", "group"]
 ```
 
 #### `federation.issuer`
@@ -1122,18 +1122,66 @@ federation:
 }
 ```
 
+#### `federation.domain`
+
+**Type**: String or `null` (optional)
+
+**Default**: `""` (empty — inherit from project-level `domain`)
+
+**Description**: Override the domain used in federation mapping rules, independently of the project-level `domain` field. This decouples the OpenStack project domain from the domain referenced in IDP mapping rules.
+
+**Three-state behavior**:
+
+| YAML value | Python value | Effect |
+|---|---|---|
+| *(absent)* | `""` | Inherit from `project.domain` (backward compatible) |
+| `null` | `None` | Suppress domain (project mode: no domain element; group mode: `"Default"`) |
+| `"SomeDomain"` | `"SomeDomain"` | Use this value instead of project domain |
+
+**Use case**: A project operates in domain `"eodc-eu"` for OpenStack purposes, but the IDP mapping should reference `"Default"` (or no domain at all) instead.
+
+**Examples**:
+```yaml
+# Project uses eodc-eu for OpenStack, but IDP mapping omits domain
+domain: "eodc-eu"
+federation:
+  domain: null  # suppress domain from mapping rules
+  role_assignments:
+    - idp_group: member
+      roles: [member]
+
+# Project uses eodc-eu for OpenStack, but IDP mapping uses a different domain
+domain: "eodc-eu"
+federation:
+  domain: "Default"  # explicit override
+  role_assignments:
+    - idp_group: member
+      roles: [member]
+
+# Default behavior — inherit project domain (no change needed)
+domain: "eodc-eu"
+federation:
+  # domain absent or "" → inherits "eodc-eu" from project
+  role_assignments:
+    - idp_group: member
+      roles: [member]
+```
+
+---
+
 #### `federation.mode`
 
-**Type**: String (optional)
+**Type**: String or list of strings (optional)
 
 **Default**: `"project"`
 
-**Valid values**: `"project"`, `"group"`
+**Valid values**: `"project"`, `"group"`, or a list like `["project", "group"]`
 
 **Description**: Default mode for `role_assignments` entries that don't specify their own `mode`. Each entry can override this with its own `mode` field, allowing mixed strategies in a single project.
 
 - **`"project"`** (default): Rules use `{"projects": [...]}` — direct project assignment. Each rule assigns roles directly to the project.
 - **`"group"`**: Rules use `{"group": {...}}` — recommended for multi-project access. Users are placed into Keystone groups (which accumulate across rules), and those groups have role assignments on the project.
+- **`["project", "group"]`**: Rules include **both** elements — users get direct project roles **and** Keystone group membership. This is useful when application credentials require direct project-scoped roles alongside group membership.
 
 **Mode resolution order**: entry `mode` > federation `mode` > hard-coded default (`"project"`)
 
@@ -1142,7 +1190,7 @@ federation:
 2. Derives `group_role_assignments` from `role_assignments` so the groups get the correct roles on the project
 3. Generates mapping rules that place IDP users into those Keystone groups
 
-**Per-entry override**: Entries within a single project can use different modes. Group-mode and project-mode entries coexist in the same mapping document.
+**Per-entry override**: Entries within a single project can use different modes. Group-mode, project-mode, and combined-mode entries coexist in the same mapping document.
 
 ```yaml
 # Default: all entries use project mode
@@ -1152,6 +1200,10 @@ federation:
 # All entries default to group mode
 federation:
   mode: "group"
+
+# Combined mode: both project assignment and group membership
+federation:
+  mode: ["project", "group"]
 
 # Mixed modes: federation default is project, one entry overrides to group
 federation:
@@ -1163,14 +1215,18 @@ federation:
     - idp_group: reader
       roles: [reader]
       mode: "group"   # override for this entry only
+    - idp_group: operator
+      roles: [admin]
+      mode: ["project", "group"]  # both elements in one rule
 ```
 
-**Generated rule example** (group mode, project "my project", idp_group "member"):
+**Generated rule example** (combined mode `["project", "group"]`, project "my project", idp_group "member"):
 ```json
 {
   "local": [
     {"user": {"name": "{0}", "email": "{1}", "type": "ephemeral"}},
-    {"group": {"name": "my project member", "domain": {"name": "Default"}}}
+    {"group": {"name": "my project member", "domain": {"name": "Default"}}},
+    {"projects": [{"name": "my project", "roles": [{"name": "member"}]}]}
   ],
   "remote": [
     {"type": "OIDC-preferred_username"},
@@ -1212,20 +1268,20 @@ role_assignments:
     roles:                               # OpenStack roles to assign
       - <string>
     keystone_group: <string>             # Optional: explicit group name (group mode only)
-    mode: <string>                       # Optional: per-entry override — "project" or "group"
+    mode: <string | list[string]>         # Optional: per-entry override — "project", "group", or ["project", "group"]
 ```
 
 **Fields**:
 - `idp_group`: Identity provider group name(s) — a non-empty string or a non-empty list of non-empty strings. When a list is given, all resolved group paths are placed in a single `any_one_of` clause, meaning membership in **any** of the listed groups grants the specified roles.
 - `roles`: List of OpenStack role names (list of strings, non-empty)
 - `keystone_group`: Optional explicit Keystone group name override (group mode only). When empty (default), the group name is auto-derived as `{project_name}{separator}{idp_group}`. When set, this exact name is used instead.
-- `mode`: Optional per-entry mode override. When empty, inherits from `federation.mode` (which defaults to `"project"`). Valid values: `"project"`, `"group"`.
+- `mode`: Optional per-entry mode override. When empty, inherits from `federation.mode` (which defaults to `"project"`). Valid values: `"project"`, `"group"`, or a list like `["project", "group"]`.
 
 **Validation**:
 - `idp_group` must be a non-empty string **or** a non-empty list of non-empty strings
 - `roles` must be a non-empty list of non-empty strings
 - `keystone_group` must be a string (if present)
-- `mode` must be `"project"`, `"group"`, or empty (if present)
+- `mode` must be `"project"`, `"group"`, a list like `["project", "group"]`, or empty (if present)
 
 **Example** (project mode — default):
 ```yaml

@@ -14,6 +14,8 @@ from src.resources.federation import (
 )
 from src.utils import ActionStatus, SharedContext
 
+_UNSET = object()  # sentinel: federation_domain not specified
+
 
 def _make_project_cfg(
     name: str,
@@ -24,9 +26,10 @@ def _make_project_cfg(
     domain: str | None = None,
     domain_id: str = "default",
     user_type: str = "",
-    mode: str = "project",
+    mode: str | list[str] = "project",
     group_name_separator: str = " ",
     group_role_assignments: list[dict] | None = None,
+    federation_domain: str | None | object = _UNSET,
 ) -> ProjectConfig:
     """Build a minimal project config with federation settings."""
     # Simulate config-loader behaviour: inherit federation-level mode into each entry.
@@ -43,6 +46,8 @@ def _make_project_cfg(
     }
     if user_type:
         fed_dict["user_type"] = user_type
+    if federation_domain is not _UNSET:
+        fed_dict["domain"] = federation_domain
     project_dict: dict = {
         "name": name,
         "resource_prefix": name,
@@ -1041,3 +1046,307 @@ class TestMixedEntryModes:
         result = augment_group_role_assignments(cfg)
 
         assert result.group_role_assignments == []
+
+
+class TestFederationDomainOverride:
+    """federation.domain decouples IDP mapping domain from project domain."""
+
+    def test_inherit_project_domain_default(self) -> None:
+        """Absent federation.domain inherits project.domain (backward compat)."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="MyDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][1]["domain"] == {"name": "MyDomain"}
+
+    def test_inherit_none_domain_no_element(self) -> None:
+        """Absent federation.domain + no project domain → no domain element (backward compat)."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert "domain" not in rules[0]["local"][1]
+
+    def test_override_project_mode(self) -> None:
+        """Explicit federation.domain overrides project.domain in project mode."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="eodc-eu",
+                federation_domain="OtherDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][1]["domain"] == {"name": "OtherDomain"}
+
+    def test_override_group_mode(self) -> None:
+        """Explicit federation.domain overrides project.domain in group mode."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="eodc-eu",
+                mode="group",
+                federation_domain="OtherDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][1]["group"]["domain"] == {"name": "OtherDomain"}
+
+    def test_suppress_project_mode_no_domain_element(self) -> None:
+        """federation.domain=null suppresses domain element in project mode."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="eodc-eu",
+                federation_domain=None,
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert "domain" not in rules[0]["local"][1]
+
+    def test_suppress_group_mode_uses_default(self) -> None:
+        """federation.domain=null in group mode → domain "Default"."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="eodc-eu",
+                mode="group",
+                federation_domain=None,
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        assert rules[0]["local"][1]["group"]["domain"] == {"name": "Default"}
+
+    def test_mixed_projects_inherit_and_override(self) -> None:
+        """One project inherits domain, another overrides via federation.domain."""
+        projects = [
+            _make_project_cfg(
+                "inheriting",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="eodc-eu",
+            ),
+            _make_project_cfg(
+                "overriding",
+                [{"idp_group": "member", "roles": ["member"]}],
+                domain="eodc-eu",
+                federation_domain="CustomDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 2
+        # Sorted by project name: inheriting first, overriding second
+        assert rules[0]["local"][1]["domain"] == {"name": "eodc-eu"}
+        assert rules[1]["local"][1]["domain"] == {"name": "CustomDomain"}
+
+
+class TestListModeRules:
+    """List mode (["project", "group"]) produces both group and projects elements."""
+
+    def test_list_mode_generates_group_and_projects_elements(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode=["project", "group"],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        local = rules[0]["local"]
+        # user + group + projects = 3 elements
+        assert len(local) == 3
+        assert "user" in local[0]
+        assert "group" in local[1]
+        assert "projects" in local[2]
+        assert local[1]["group"]["name"] == "proj member"
+        assert local[1]["group"]["domain"] == {"name": "Default"}
+        assert local[2]["projects"][0]["name"] == "proj"
+        assert local[2]["projects"][0]["roles"] == [{"name": "member"}]
+
+    def test_list_mode_with_domain(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode=["project", "group"],
+                domain="MyDomain",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        local = rules[0]["local"]
+        assert local[1]["group"]["domain"] == {"name": "MyDomain"}
+        assert local[2]["domain"] == {"name": "MyDomain"}
+
+    def test_list_mode_no_domain_group_defaults(self) -> None:
+        """No domain → group gets 'Default', projects omits domain."""
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode=["project", "group"],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        local = rules[0]["local"]
+        assert local[1]["group"]["domain"] == {"name": "Default"}
+        assert "domain" not in local[2]
+
+    def test_list_mode_user_type_propagated(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode=["project", "group"],
+                user_type="ephemeral",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][0]["user"]["type"] == "ephemeral"
+
+    def test_list_mode_custom_keystone_group(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"], "keystone_group": "custom-group"}],
+                mode=["project", "group"],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["name"] == "custom-group"
+
+    def test_list_mode_list_idp_group(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": ["alpha", "beta"], "roles": ["member"]}],
+                mode=["project", "group"],
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert len(rules) == 1
+        # Sorted any_one_of
+        assert rules[0]["remote"][3]["any_one_of"] == [
+            "/services/openstack/proj/alpha",
+            "/services/openstack/proj/beta",
+        ]
+        # Group name from first entry
+        assert rules[0]["local"][1]["group"]["name"] == "proj alpha"
+
+    def test_list_mode_custom_separator(self) -> None:
+        projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode=["project", "group"],
+                group_name_separator="-",
+            ),
+        ]
+        rules = _build_generated_rules(projects)
+
+        assert rules[0]["local"][1]["group"]["name"] == "proj-member"
+
+    def test_single_element_list_same_as_string(self) -> None:
+        """["project"] produces same output as "project"."""
+        list_projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode=["project"],
+            ),
+        ]
+        string_projects = [
+            _make_project_cfg(
+                "proj",
+                [{"idp_group": "member", "roles": ["member"]}],
+                mode="project",
+            ),
+        ]
+        list_rules = _build_generated_rules(list_projects)
+        string_rules = _build_generated_rules(string_projects)
+
+        assert list_rules == string_rules
+
+    def test_per_entry_list_mode_mixed(self) -> None:
+        """One entry with list mode, another with string mode coexist."""
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member"], "mode": ["project", "group"]},
+                {"idp_group": "reader", "roles": ["reader"], "mode": "project"},
+            ],
+        )
+        rules = _build_generated_rules([cfg])
+
+        assert len(rules) == 2
+        # First rule: list mode → 3 local elements (user, group, projects)
+        assert len(rules[0]["local"]) == 3
+        assert "group" in rules[0]["local"][1]
+        assert "projects" in rules[0]["local"][2]
+        # Second rule: string mode → 2 local elements (user, projects)
+        assert len(rules[1]["local"]) == 2
+        assert "projects" in rules[1]["local"][1]
+
+    def test_list_mode_augments_group_role_assignments(self) -> None:
+        """List mode with group triggers group role augmentation."""
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member", "load-balancer_member"]},
+            ],
+            mode=["project", "group"],
+        )
+        result = augment_group_role_assignments(cfg)
+
+        assert len(result.group_role_assignments) == 1
+        assert result.group_role_assignments[0].group == "proj member"
+        assert result.group_role_assignments[0].roles == ["member", "load-balancer_member"]
+
+    def test_mixed_string_and_list_modes_augmentation(self) -> None:
+        """project + group + list modes coexist for augmentation."""
+        cfg = _make_project_cfg(
+            "proj",
+            [
+                {"idp_group": "member", "roles": ["member"], "mode": "project"},
+                {"idp_group": "reader", "roles": ["reader"], "mode": "group"},
+                {"idp_group": "operator", "roles": ["admin"], "mode": ["project", "group"]},
+            ],
+        )
+        result = augment_group_role_assignments(cfg)
+
+        # Two derived assignments: reader (group mode) + operator (list mode includes group)
+        assert len(result.group_role_assignments) == 2
+        assert result.group_role_assignments[0].group == "proj reader"
+        assert result.group_role_assignments[0].roles == ["reader"]
+        assert result.group_role_assignments[1].group == "proj operator"
+        assert result.group_role_assignments[1].roles == ["admin"]

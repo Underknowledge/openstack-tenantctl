@@ -13,7 +13,7 @@ class FederationRoleAssignment:
     idp_group: str | list[str]
     roles: list[str]
     keystone_group: str = ""
-    mode: str = ""
+    mode: str | list[str] = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FederationRoleAssignment:
@@ -49,17 +49,34 @@ class FederationRoleAssignment:
             errors.append(f"{label}.keystone_group must be a string, got {keystone_group!r}")
             keystone_group = ""
         mode = data.get("mode", "")
-        if mode and mode not in _VALID_MODES:
-            errors.append(f"{label}.mode must be one of {sorted(_VALID_MODES)} or empty, got {mode!r}")
+        if isinstance(mode, str):
+            if mode and mode not in _VALID_MODES:
+                errors.append(f"{label}.mode must be one of {sorted(_VALID_MODES)} or empty, got {mode!r}")
+        elif isinstance(mode, list):
+            if len(mode) == 0:
+                errors.append(f"{label}.mode list must not be empty")
+            elif any(not isinstance(m, str) or m not in _VALID_MODES for m in mode):
+                errors.append(f"{label}.mode must contain only values from {sorted(_VALID_MODES)}, got {mode!r}")
+            elif len(set(mode)) != len(mode):
+                errors.append(f"{label}.mode must not contain duplicates, got {mode!r}")
+        else:
+            errors.append(f"{label}.mode must be a string, list of strings, or empty, got {mode!r}")
         return cls(
             idp_group=idp_group if idp_group is not None else "",
             roles=roles if isinstance(roles, list) else [],
             keystone_group=keystone_group,
-            mode=mode if isinstance(mode, str) else "",
+            mode=mode if isinstance(mode, (str, list)) else "",
         )
 
 
 _VALID_MODES: set[str] = {"project", "group"}
+
+
+def _normalize_modes(mode: str | list[str]) -> set[str]:
+    """Return mode(s) as a set for uniform membership testing."""
+    if isinstance(mode, str):
+        return {mode}
+    return set(mode)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,7 +87,8 @@ class FederationConfig:
     mapping_id: str = ""
     group_prefix: str = "/services/openstack/"
     user_type: str = ""
-    mode: str = "project"
+    domain: str | None = ""
+    mode: str | list[str] = "project"
     group_name_separator: str = " "
     role_assignments: list[FederationRoleAssignment] = dataclasses.field(default_factory=list)
 
@@ -82,6 +100,7 @@ class FederationConfig:
             mapping_id=data.get("mapping_id", ""),
             group_prefix=data.get("group_prefix", "/services/openstack/"),
             user_type=data.get("user_type", ""),
+            domain=data.get("domain", ""),
             mode=data.get("mode", "project"),
             group_name_separator=data.get("group_name_separator", " "),
             role_assignments=[FederationRoleAssignment.from_dict(a) for a in data.get("role_assignments", [])],
@@ -91,8 +110,26 @@ class FederationConfig:
     def validate(cls, data: dict[str, Any], errors: list[str], label: str) -> FederationConfig:
         """Validate *data* and return a ``FederationConfig`` (always constructible)."""
         mode = data.get("mode", "project")
-        if mode not in _VALID_MODES:
-            errors.append(f"{label}: federation.mode must be one of " f"{sorted(_VALID_MODES)}, got {mode!r}")
+        if isinstance(mode, str):
+            if mode not in _VALID_MODES:
+                errors.append(f"{label}: federation.mode must be one of {sorted(_VALID_MODES)}, got {mode!r}")
+        elif isinstance(mode, list):
+            if len(mode) == 0:
+                errors.append(f"{label}: federation.mode list must not be empty")
+            elif any(not isinstance(m, str) or m not in _VALID_MODES for m in mode):
+                errors.append(
+                    f"{label}: federation.mode must contain only values from {sorted(_VALID_MODES)}, got {mode!r}"
+                )
+            elif len(set(mode)) != len(mode):
+                errors.append(f"{label}: federation.mode must not contain duplicates, got {mode!r}")
+        else:
+            errors.append(f"{label}: federation.mode must be a string, list of strings, or empty, got {mode!r}")
+
+        # Validate domain: must be str, None, or absent (defaults to "").
+        raw_domain = data.get("domain", "")
+        if raw_domain is not None and not isinstance(raw_domain, str):
+            errors.append(f"{label}: federation.domain must be a string or null, got {type(raw_domain).__name__}")
+            raw_domain = ""
 
         assignments_data = data.get("role_assignments")
         validated_assignments: list[FederationRoleAssignment] = []
@@ -108,7 +145,8 @@ class FederationConfig:
             mapping_id=data.get("mapping_id", ""),
             group_prefix=data.get("group_prefix", "/services/openstack/"),
             user_type=data.get("user_type", ""),
-            mode=mode if isinstance(mode, str) else "project",
+            domain=raw_domain,
+            mode=mode if isinstance(mode, (str, list)) else "project",
             group_name_separator=data.get("group_name_separator", " "),
             role_assignments=validated_assignments,
         )
