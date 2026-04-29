@@ -389,6 +389,10 @@ def ensure_quotas(
             )
         ]
 
+    # Dry-run with non-existent project: no quotas to read yet.
+    if not project_id:
+        return [ctx.record(ActionStatus.CREATED, "quotas", "", "would set quotas (project not yet created)")]
+
     # Offline mode: no connection available.
     if ctx.conn is None:
         return [ctx.record(ActionStatus.SKIPPED, "quotas", "", "would set quotas (offline)")]
