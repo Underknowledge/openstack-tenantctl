@@ -29,6 +29,7 @@ class TestEnsureQuotas:
 
         # Network quotas match so they don't distract
         net_quota = MagicMock()
+        net_quota.networks = 1
         net_quota.subnets = 1
         net_quota.routers = 1
         net_quota.ports = 50
@@ -76,8 +77,10 @@ class TestEnsureQuotas:
         compute_quota.instances = 10
         shared_ctx.conn.compute.get_quota_set.return_value = compute_quota
 
-        # Network quotas match (floating_ips=0 and networks=1 are excluded)
+        # Network quotas match (floating_ips is excluded; networks/subnets/routers
+        # are owned by ensure_quotas now).
         net_quota = MagicMock()
+        net_quota.networks = 1
         net_quota.subnets = 1
         net_quota.routers = 1
         net_quota.ports = 50
@@ -153,6 +156,82 @@ class TestEnsureQuotas:
         assert len(actions) == 1
         assert actions[0].status == ActionStatus.SKIPPED
         assert "offline" in actions[0].details
+
+    def test_dry_run_and_live_agree_on_subnets_diff(
+        self,
+        mock_state_store: MagicMock,
+    ) -> None:
+        """Regression: dry-run plan must match what the next live run reports.
+
+        Previously, prealloc/network.py wrote networks/subnets/routers quotas
+        and quotas.py also wrote them — dual ownership made the dry-run plan
+        and the subsequent live run disagree. Now ensure_quotas owns them.
+        For ``networks=1`` + ``subnets`` diff, both runs must produce a single
+        ``network_quota`` UPDATED action with the same diff text.
+
+        Builds independent mock connections per ctx so the dry-run write-check
+        is meaningful — the shared/dry_run fixtures share a single mock_conn.
+        """
+        cfg = ProjectConfig.from_dict(
+            {
+                "name": "test_project",
+                "resource_prefix": "test",
+                "quotas": {
+                    "compute": {"cores": 20},
+                    "network": {"networks": 1, "subnets": 5},
+                    "block_storage": {"gigabytes": 100},
+                },
+            }
+        )
+
+        def _build_ctx(*, dry_run: bool) -> SharedContext:
+            conn = MagicMock(name="Connection")
+            compute_quota = MagicMock()
+            compute_quota.cores = 20
+            conn.compute.get_quota_set.return_value = compute_quota
+
+            net_quota = MagicMock()
+            net_quota.networks = 1
+            net_quota.subnets = 2  # current: differs from desired (5)
+            conn.network.get_quota.return_value = net_quota
+
+            bs_quota = MagicMock()
+            bs_quota.gigabytes = 100
+            bs_quota.to_dict.return_value = {"gigabytes": 100}
+            conn.block_storage.get_quota_set.return_value = bs_quota
+
+            return SharedContext(
+                conn=conn,
+                dry_run=dry_run,
+                external_net_id="ext",
+                external_subnet_id="ext-sub",
+                state_store=mock_state_store,
+            )
+
+        dry_ctx = _build_ctx(dry_run=True)
+        live_ctx = _build_ctx(dry_run=False)
+
+        dry_actions = ensure_quotas(cfg, "proj-123", dry_ctx)
+        live_actions = ensure_quotas(cfg, "proj-123", live_ctx)
+
+        # Exactly one UPDATED network_quota action in each run
+        dry_net = [a for a in dry_actions if a.resource_type == "network_quota" and a.status == ActionStatus.UPDATED]
+        live_net = [a for a in live_actions if a.resource_type == "network_quota" and a.status == ActionStatus.UPDATED]
+        assert len(dry_net) == 1
+        assert len(live_net) == 1
+
+        # Dry-run details mention the subnets: 2 → 5 transition
+        assert "subnets: 2 → 5" in dry_net[0].details
+        # Live details mention the new value 5
+        assert "subnets" in live_net[0].details
+        assert "5" in live_net[0].details
+
+        # Dry-run wrote nothing; live wrote once with the desired values
+        dry_ctx.conn.network.update_quota.assert_not_called()
+        live_ctx.conn.network.update_quota.assert_called_once()
+        call_kwargs = live_ctx.conn.network.update_quota.call_args[1]
+        assert call_kwargs["networks"] == 1
+        assert call_kwargs["subnets"] == 5
 
     @pytest.mark.parametrize(("fip_count", "openstack_current"), [(1, 5), (3, 0), (10, 999)])
     def test_excludes_floating_ips_unconditionally(
@@ -726,13 +805,17 @@ class TestQuotaEdgeCases:
 
 
 class TestNetworkQuotaExclusions:
-    """Network quota exclusions: floating_ips and networks when prealloc owns them."""
+    """Network quota exclusions: only floating_ips is excluded.
 
-    def test_floating_ips_and_networks_both_excluded(
+    networks/subnets/routers are owned by ensure_quotas regardless of value;
+    the pre-allocated network module is resource-only and never writes quotas.
+    """
+
+    def test_floating_ips_excluded_networks_included(
         self,
         shared_ctx: SharedContext,
     ) -> None:
-        """Both floating_ips and networks excluded when prealloc owns them."""
+        """floating_ips is excluded; networks/subnets are owned by ensure_quotas."""
         cfg = ProjectConfig.from_dict(
             {
                 "name": "test_project",
@@ -754,11 +837,11 @@ class TestNetworkQuotaExclusions:
         compute_quota.cores = 20
         shared_ctx.conn.compute.get_quota_set.return_value = compute_quota
 
-        # Network: floating_ips and networks differ but both excluded
+        # Network: floating_ips differs but excluded; networks/subnets differ → UPDATED
         net_quota = MagicMock()
         net_quota.floating_ips = 0
         net_quota.networks = 10
-        net_quota.subnets = 3
+        net_quota.subnets = 1
         shared_ctx.conn.network.get_quota.return_value = net_quota
 
         # Block-storage matches
@@ -769,9 +852,15 @@ class TestNetworkQuotaExclusions:
 
         actions = ensure_quotas(cfg, "proj-123", shared_ctx)
 
-        # All skipped
-        assert all(a.status == ActionStatus.SKIPPED for a in actions)
-        shared_ctx.conn.network.update_quota.assert_not_called()
+        network_action = next(a for a in actions if a.resource_type == "network_quota")
+        assert network_action.status == ActionStatus.UPDATED
+
+        # update_quota called with networks/subnets but NOT floating_ips
+        shared_ctx.conn.network.update_quota.assert_called_once()
+        call_kwargs = shared_ctx.conn.network.update_quota.call_args[1]
+        assert "floating_ips" not in call_kwargs
+        assert call_kwargs["networks"] == 1
+        assert call_kwargs["subnets"] == 3
 
     def test_all_three_quota_types_differ(
         self,

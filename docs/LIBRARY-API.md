@@ -401,7 +401,11 @@ actions = track_router_ips(cfg, project_id, ctx)
 
 ### `ensure_quotas`
 
-Set compute, network, and block storage quotas.
+Set compute, network, and block storage quotas. Sole owner of every quota
+write except `floating_ips` (which is managed by `ensure_preallocated_fips`
+because that quota is coupled to actual FIP allocation). All Neutron keys —
+including `networks`, `subnets`, and `routers` — are written here regardless
+of value.
 
 ```python
 from src import ensure_quotas
@@ -411,7 +415,7 @@ actions = ensure_quotas(cfg, project_id, ctx)
 
 **Services:**
 - Compute (Nova)
-- Network (Neutron)
+- Network (Neutron) — owns `networks`/`subnets`/`routers`/`ports`/etc.
 - Load Balancer (Octavia - graceful skip if unavailable)
 - Block Storage (Cinder)
 
@@ -504,7 +508,9 @@ actions = ensure_preallocated_fips(cfg, project_id, ctx)
 
 ### `ensure_preallocated_network`
 
-Enforce network quotas for pre-allocated case (networks ≤ 1).
+Ensure the project's pre-allocated network/subnet/router resource exists when
+`quotas.network.networks <= 1`. **Does not write quotas** — pair with
+`ensure_quotas` (or `TenantCtl.run()`) to configure quota values.
 
 ```python
 from src import ensure_preallocated_network
@@ -513,9 +519,11 @@ actions = ensure_preallocated_network(cfg, project_id, ctx)
 ```
 
 **Handles:**
-- `networks=0`: No network needed
-- `networks=1`: Single network (pre-allocated)
-- `networks≥2`: Delegates to main quota handler
+- `networks=0`: SKIPPED, no network resource created
+- `networks=1`: Ensures network/subnet/router resource exists (idempotent;
+  falls back to `ensure_network_stack` if the stack is missing)
+- `networks>=2`: SKIPPED — multi-network case is handled by the NETWORK
+  scope and quotas by `ensure_quotas`
 
 **Returns:** `list[Action]`
 

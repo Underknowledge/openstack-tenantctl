@@ -1,12 +1,13 @@
-"""Network quota enforcement for pre-allocated networks.
+"""Pre-allocated network resource lifecycle (network/subnet/router).
 
-When networks <= 1 in config, this module owns the network-related quotas
-(``ensure_quotas`` skips them).  The actual network stack is created by
-``ensure_network_stack()`` earlier in the reconciler pipeline — this module
-only sets quotas to the configured values.
+When ``quotas.network.networks <= 1`` in config, this module ensures the
+project owns the matching network resource.  ``ensure_network_stack``
+(called earlier in the NETWORK scope) creates the stack idempotently;
+this module is a safety net for the rare case where the stack is missing
+when ``PREALLOC_NETWORK`` runs.
 
-When networks >= 2, this module skips entirely and ``ensure_quotas`` handles
-the network quotas through the normal path.
+This module does NOT write quotas.  All quota writes — including
+``networks``, ``subnets``, ``routers`` — are owned by ``ensure_quotas``.
 """
 
 from __future__ import annotations
@@ -15,8 +16,6 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from openstack.connection import Connection
-
     from src.models import ProjectConfig
 
 from src.resources.network import ensure_network_stack
@@ -25,23 +24,9 @@ from src.utils import (
     ActionStatus,
     SharedContext,
     find_network,
-    retry,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@retry()
-def _set_network_quotas(conn: Connection, project_id: str, networks: int, subnets: int, routers: int) -> None:
-    """Set network, subnet, and router quotas to the specified values."""
-    conn.network.update_quota(project_id, networks=networks, subnets=subnets, routers=routers)
-    logger.info(
-        "Set network quotas for project %s: networks=%d, subnets=%d, routers=%d",
-        project_id,
-        networks,
-        subnets,
-        routers,
-    )
 
 
 def ensure_preallocated_network(
@@ -49,12 +34,14 @@ def ensure_preallocated_network(
     project_id: str,
     ctx: SharedContext,
 ) -> list[Action]:
-    """Enforce network quotas for the pre-allocated case (networks <= 1).
+    """Ensure the project's pre-allocated network resource exists.
 
-    When networks=0: set quota to 0, no network needed.
-    When networks=1: set network quotas from config (network already created
-    by ``ensure_network_stack`` earlier in the pipeline).
-    When networks >= 2: skip — quotas handled by ``ensure_quotas``.
+    When networks=0: no network needed, skip.
+    When networks=1: ensure the network stack exists (fallback to
+    ``ensure_network_stack`` if it wasn't created earlier in the pipeline).
+    When networks >= 2: skip — handled entirely by the NETWORK scope.
+
+    All quota writes are delegated to ``ensure_quotas``.
     """
     net_quotas = cfg.quotas.network if cfg.quotas else None
     if not net_quotas:
@@ -67,8 +54,6 @@ def ensure_preallocated_network(
             )
         ]
     networks_quota: int = net_quotas.get("networks", 1)
-    subnets_quota: int = net_quotas.get("subnets", 1)
-    routers_quota: int = net_quotas.get("routers", 1)
 
     if networks_quota >= 2:
         return [
@@ -76,7 +61,17 @@ def ensure_preallocated_network(
                 ActionStatus.SKIPPED,
                 "preallocated_network",
                 "",
-                f"networks quota is {networks_quota}, quotas handled by ensure_quotas",
+                f"networks quota is {networks_quota}, handled by ensure_quotas",
+            )
+        ]
+
+    if networks_quota == 0:
+        return [
+            ctx.record(
+                ActionStatus.SKIPPED,
+                "preallocated_network",
+                "",
+                "networks=0, no network requested",
             )
         ]
 
@@ -87,55 +82,29 @@ def ensure_preallocated_network(
                 ActionStatus.SKIPPED,
                 "preallocated_network",
                 cfg.name,
-                f"networks={networks_quota}, would set quota (offline)",
-            )
-        ]
-
-    if networks_quota == 0:
-        if not ctx.dry_run:
-            _set_network_quotas(
-                ctx.conn,
-                project_id,
-                networks=networks_quota,
-                subnets=subnets_quota,
-                routers=routers_quota,
-            )
-        return [
-            ctx.record(
-                ActionStatus.SKIPPED,
-                "preallocated_network",
-                "",
-                "networks=0, no network requested — quota set",
+                f"networks={networks_quota}, would ensure network exists (offline)",
             )
         ]
 
     prefix: str = cfg.resource_prefix
     net_name = f"{prefix}-network"
+    project_label = f"{cfg.name} ({project_id})"
 
     # Check whether the network already exists.
     existing = find_network(ctx.conn, net_name, project_id)
 
     if existing is not None:
-        # Network already provisioned -- just set quotas.
-        if not ctx.dry_run:
-            _set_network_quotas(
-                ctx.conn,
-                project_id,
-                networks=networks_quota,
-                subnets=subnets_quota,
-                routers=routers_quota,
-            )
         logger.debug(
-            "Network %s already exists for project %s, quotas set",
+            "Network %s already exists for project %s",
             net_name,
-            project_id,
+            project_label,
         )
         return [
             ctx.record(
                 ActionStatus.SKIPPED,
                 "preallocated_network",
                 net_name,
-                "already exists, quotas set",
+                "already exists",
             )
         ]
 
@@ -146,25 +115,17 @@ def ensure_preallocated_network(
         found_names = ", ".join(n.name for n in all_project_nets)
         logger.warning(
             "SAFETY: project %s already has network(s) [%s] but none match "
-            "expected name '%s' — setting quotas without creating",
-            project_id,
+            "expected name '%s' — leaving existing network(s) in place",
+            project_label,
             found_names,
             net_name,
         )
-        if not ctx.dry_run:
-            _set_network_quotas(
-                ctx.conn,
-                project_id,
-                networks=networks_quota,
-                subnets=subnets_quota,
-                routers=routers_quota,
-            )
         return [
             ctx.record(
                 ActionStatus.SKIPPED,
                 "preallocated_network",
                 net_name,
-                f"project has existing network(s): {found_names}, quotas set",
+                f"project has existing network(s): {found_names}",
             )
         ]
 
@@ -175,9 +136,7 @@ def ensure_preallocated_network(
                 ActionStatus.CREATED,
                 "preallocated_network",
                 net_name,
-                f"would create network stack and set quotas "
-                f"(networks={networks_quota}, subnets={subnets_quota}, "
-                f"routers={routers_quota})",
+                f"would create network stack (networks={networks_quota})",
             )
         ]
 
@@ -185,14 +144,4 @@ def ensure_preallocated_network(
     # (normally already created earlier in the pipeline).
     stack_action = ensure_network_stack(cfg, project_id, ctx)
     logger.info("Network stack creation returned: %s", stack_action.status.value)
-
-    # Set quotas to the configured values.
-    _set_network_quotas(
-        ctx.conn,
-        project_id,
-        networks=networks_quota,
-        subnets=subnets_quota,
-        routers=routers_quota,
-    )
-
     return [stack_action]

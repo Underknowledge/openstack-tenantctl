@@ -883,7 +883,7 @@ class ReconcileScope(StrEnum):
 - `ROLES`: Group role assignments (`ensure_group_role_assignments`)
 - `NETWORK`: Network stack + router IP tracking (`ensure_network_stack`, `track_router_ips`)
 - `FIPS`: Floating IP pre-allocation (`ensure_preallocated_fips`)
-- `PREALLOC_NETWORK`: Pre-allocated network quota (`ensure_preallocated_network`)
+- `PREALLOC_NETWORK`: Pre-allocated network/subnet/router resource (`ensure_preallocated_network`)
 - `QUOTAS`: Compute/network/storage quotas (`ensure_quotas`)
 - `SECURITY_GROUPS`: Baseline security group (`ensure_baseline_sg`)
 - `KEYSTONE_GROUPS`: Keystone group lifecycle (`ensure_keystone_groups`)
@@ -995,7 +995,7 @@ elif state == "absent":
 5. `ensure_network_stack()` — Network, subnet, router
 5. `track_router_ips()` — Snapshot router external IPs, detect changes
 6. `ensure_preallocated_fips()` — Pre-allocate floating IPs + drift detection
-7. `ensure_preallocated_network()` — Network quota enforcement
+7. `ensure_preallocated_network()` — Pre-allocated network/subnet/router resource (no quota writes)
 8. `ensure_quotas()` — Set compute/network/load-balancer/block-storage quotas
 9. `ensure_baseline_sg()` — Create security group and rules
 10. `unshelve_all_servers()` — Unshelve servers shelved during `locked` state
@@ -1177,8 +1177,8 @@ def ensure_quotas(
 - `_ensure_block_storage_quotas()`: Set block storage quotas with overlay strategy (read all → merge → write all to avoid Cinder resetting unspecified keys)
 
 **Special handling**:
-- `floating_ips` excluded from network quotas unconditionally (managed by prealloc FIP module)
-- `networks` excluded when <= 1 (managed by prealloc network module)
+- `floating_ips` excluded from network quotas unconditionally (managed by prealloc FIP module — that quota is coupled to actual FIP allocation)
+- `networks`, `subnets`, `routers` are owned here for every project regardless of value; `ensure_preallocated_network` only manages the resource lifecycle and never writes quotas
 - Load balancer quotas: keys in `LOAD_BALANCER_QUOTA_KEYS` are routed to `conn.load_balancer`; `EndpointNotFound` is caught gracefully
 - Block storage: catch any exception (service may be unavailable)
 
@@ -1449,20 +1449,23 @@ def ensure_preallocated_network(
     project_id: str,
     ctx: SharedContext,
 ) -> list[Action]:
-    """Enforce network quotas for the pre-allocated case (networks <= 1)."""
+    """Ensure the pre-allocated network/subnet/router resource exists when networks <= 1."""
 ```
 
 **Returns**: List of Action objects.
 
-**Behavior**:
-- `networks >= 2`: SKIPPED (quotas handled by `ensure_quotas`)
-- `networks == 0`: Set network/subnet/router quotas to configured values, SKIPPED
+**Behavior** — resource lifecycle only; **does not write quotas** (those are
+owned by `ensure_quotas`):
+- No `quotas.network` section: SKIPPED
+- `networks >= 2`: SKIPPED (handled by the NETWORK scope; quotas by `ensure_quotas`)
+- `networks == 0`: SKIPPED, no network resource created
 - `networks == 1`:
-  - If network already exists: set quotas, SKIPPED
-  - Safety: if project owns any network with unexpected name: set quotas without creating
-  - Otherwise: create network stack via `ensure_network_stack()`, then set quotas
+  - If network already exists with the expected name: SKIPPED
+  - Safety: if project owns any network with an unexpected name: SKIPPED, leaves existing in place
+  - Dry-run, network missing: CREATED ("would create network stack")
+  - Live, network missing: fallback to `ensure_network_stack()` (normally already created earlier in the NETWORK scope)
 
-**Config fields used**: `cfg.quotas.network.networks`, `cfg.quotas.network.subnets`, `cfg.quotas.network.routers`
+**Config fields used**: `cfg.quotas.network.networks`, `cfg.network.*` (passed through to `ensure_network_stack`)
 
 ---
 
