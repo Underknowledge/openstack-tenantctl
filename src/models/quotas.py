@@ -31,7 +31,7 @@ class QuotaConfig:
         """Create from dict with unit parsing support.
 
         Parses human-readable units for RAM and storage fields:
-        - compute.ram: "50GB" → 50000 (MB)
+        - compute.ram: "50GB" → 47684 (MiB)
         - block_storage.gigabytes/backup_gigabytes: "2TB" → 2000 (GB)
 
         This method is lenient (does not raise on errors, just passes through).
@@ -43,7 +43,7 @@ class QuotaConfig:
         compute_dict: dict[str, int] = {}
         for key, val in data.get("compute", {}).items():
             if key in RAM_FIELDS:
-                compute_dict[key] = parse_quota_value(val, "MB", f"compute.{key}", errors, "from_dict")
+                compute_dict[key] = parse_quota_value(val, "MiB", f"compute.{key}", errors, "from_dict")
             elif key == RAM_GIB_ALIAS:
                 if isinstance(val, int) and val >= -1:
                     compute_dict[RAM_GIB_ALIAS] = -1 if val == -1 else val * _GIB_TO_MIB
@@ -80,7 +80,7 @@ class QuotaConfig:
         """Validate *data* and return a ``QuotaConfig`` (always constructible).
 
         Supports human-readable units for RAM and storage fields:
-        - compute.ram: accepts "50GB" or "50GiB" (converted to MB)
+        - compute.ram: accepts "50GB" or "50GiB" (converted to MiB)
         - block_storage.gigabytes: accepts "2TB" or "2TiB" (converted to GB)
         - block_storage.backup_gigabytes: accepts "500GB" (converted to GB)
         """
@@ -101,7 +101,7 @@ class QuotaConfig:
                     target_dict = validated_compute
                     if qkey in RAM_FIELDS:
                         # Field supports units - use parser
-                        parsed_value = parse_quota_value(qval, "MB", f"{section_key}.{qkey}", errors, label)
+                        parsed_value = parse_quota_value(qval, "MiB", f"{section_key}.{qkey}", errors, label)
                         target_dict[qkey] = parsed_value
                     elif qkey == RAM_GIB_ALIAS:
                         # Convenience alias: plain GiB integer → MiB

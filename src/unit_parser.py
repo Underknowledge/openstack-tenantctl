@@ -4,11 +4,11 @@ Supports decimal units (KB, MB, GB, TB, PB) and binary units (KiB, MiB, GiB, TiB
 for quota values that represent memory or storage.
 
 Examples:
-    >>> parse_quota_value("50GB", "MB", "ram", [], "test")
-    50000
-    >>> parse_quota_value("50GiB", "MB", "ram", [], "test")
+    >>> parse_quota_value("50GB", "MiB", "ram", [], "test")
+    47684
+    >>> parse_quota_value("50GiB", "MiB", "ram", [], "test")
     51200
-    >>> parse_quota_value(51200, "MB", "ram", [], "test")
+    >>> parse_quota_value(51200, "MiB", "ram", [], "test")
     51200
 """
 
@@ -50,6 +50,7 @@ ALL_UNITS: dict[str, int] = {**DECIMAL_UNITS, **BINARY_UNITS}
 # Target unit conversion factors
 TARGET_UNITS: dict[str, int] = {
     "MB": DECIMAL_UNITS["MB"],
+    "MiB": BINARY_UNITS["MiB"],
     "GB": DECIMAL_UNITS["GB"],
 }
 
@@ -62,7 +63,7 @@ UNIT_PATTERN = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*([A-Za-z]+)\s*$")
 
 def parse_quota_value(
     value: int | str,
-    target_unit: Literal["MB", "GB"],
+    target_unit: Literal["MB", "MiB", "GB"],
     field_name: str,
     errors: list[str],
     label: str,
@@ -81,13 +82,13 @@ def parse_quota_value(
 
     Examples:
         >>> errors: list[str] = []
-        >>> parse_quota_value("50GB", "MB", "ram", errors, "test")
-        50000
-        >>> parse_quota_value("50GiB", "MB", "ram", errors, "test")
+        >>> parse_quota_value("50GB", "MiB", "ram", errors, "test")
+        47684
+        >>> parse_quota_value("50GiB", "MiB", "ram", errors, "test")
         51200
-        >>> parse_quota_value(51200, "MB", "ram", errors, "test")
+        >>> parse_quota_value(51200, "MiB", "ram", errors, "test")
         51200
-        >>> parse_quota_value(-1, "MB", "ram", errors, "test")  # unlimited
+        >>> parse_quota_value(-1, "MiB", "ram", errors, "test")  # unlimited
         -1
     """
     # Handle integer passthrough (backward compatibility)

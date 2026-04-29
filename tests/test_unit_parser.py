@@ -7,7 +7,9 @@ import pytest
 from src.unit_parser import parse_quota_value
 
 
-def _parse(value: object, target: str = "MB", field: str = "compute.ram", label: str = "test") -> tuple[int, list[str]]:
+def _parse(
+    value: object, target: str = "MiB", field: str = "compute.ram", label: str = "test"
+) -> tuple[int, list[str]]:
     """Helper: call parse_quota_value, return (result, errors)."""
     errors: list[str] = []
     result = parse_quota_value(value, target, field, errors, label)
@@ -47,50 +49,50 @@ class TestUnitConversions:
         [
             # Decimal units (base-10)
             ("1000KB", "MB", "compute.ram", 1),
-            ("50MB", "MB", "compute.ram", 50),
-            ("50GB", "MB", "compute.ram", 50000),
-            ("2TB", "MB", "compute.ram", 2000000),
-            ("1PB", "MB", "compute.ram", 1000000000),
+            ("50MB", "MiB", "compute.ram", 48),
+            ("50GB", "MiB", "compute.ram", 47684),
+            ("2TB", "MiB", "compute.ram", 1907349),
+            ("1PB", "MiB", "compute.ram", 953674316),
             ("500GB", "GB", "block_storage.gigabytes", 500),
             ("2TB", "GB", "block_storage.gigabytes", 2000),
             # Binary units (base-2)
-            ("1024KiB", "MB", "compute.ram", 1),
-            ("50MiB", "MB", "compute.ram", 52),
-            ("50GiB", "MB", "compute.ram", 53687),
-            ("2TiB", "MB", "compute.ram", 2199023),
-            ("1PiB", "MB", "compute.ram", 1125899907),
+            ("1024KiB", "MiB", "compute.ram", 1),
+            ("50MiB", "MiB", "compute.ram", 50),
+            ("50GiB", "MiB", "compute.ram", 51200),
+            ("2TiB", "MiB", "compute.ram", 2097152),
+            ("1PiB", "MiB", "compute.ram", 1073741824),
             ("2TiB", "GB", "block_storage.gigabytes", 2199),
             # Shorthand aliases (binary)
-            ("1024K", "MB", "compute.ram", 1),
-            ("50M", "MB", "compute.ram", 52),
-            ("50G", "MB", "compute.ram", 53687),
-            ("2T", "MB", "compute.ram", 2199023),
-            ("1P", "MB", "compute.ram", 1125899907),
+            ("1024K", "MiB", "compute.ram", 1),
+            ("50M", "MiB", "compute.ram", 50),
+            ("50G", "MiB", "compute.ram", 51200),
+            ("2T", "MiB", "compute.ram", 2097152),
+            ("1P", "MiB", "compute.ram", 1073741824),
             # backup_gigabytes target (unique field)
             ("500GB", "GB", "block_storage.backup_gigabytes", 500),
             # Edge cases
-            ("0.001GB", "MB", "compute.ram", 1),
-            ("1GiB", "MB", "compute.ram", 1074),
+            ("0.001GB", "MiB", "compute.ram", 1),
+            ("1GiB", "MiB", "compute.ram", 1024),
         ],
         ids=[
             "1000KB->MB",
-            "50MB->MB",
-            "50GB->MB",
-            "2TB->MB",
-            "1PB->MB",
+            "50MB->MiB",
+            "50GB->MiB",
+            "2TB->MiB",
+            "1PB->MiB",
             "500GB->GB",
             "2TB->GB",
-            "1024KiB->MB",
-            "50MiB->MB",
-            "50GiB->MB",
-            "2TiB->MB",
-            "1PiB->MB",
+            "1024KiB->MiB",
+            "50MiB->MiB",
+            "50GiB->MiB",
+            "2TiB->MiB",
+            "1PiB->MiB",
             "2TiB->GB",
-            "1024K->MB",
-            "50M->MB",
-            "50G->MB",
-            "2T->MB",
-            "1P->MB",
+            "1024K->MiB",
+            "50M->MiB",
+            "50G->MiB",
+            "2T->MiB",
+            "1P->MiB",
             "500GB->GB-backup",
             "tiny-fractional",
             "exact-power-of-2",
@@ -112,7 +114,7 @@ class TestWhitespaceHandling:
     )
     def test_whitespace_variants(self, value: str) -> None:
         result, errors = _parse(value)
-        assert result == 50000
+        assert result == 47684
         assert errors == []
 
 
@@ -122,13 +124,13 @@ class TestFractionalValues:
     @pytest.mark.parametrize(
         ("value", "target", "field", "expected"),
         [
-            ("1.5GB", "MB", "compute.ram", 1500),
-            ("1.4GB", "MB", "compute.ram", 1400),
-            ("1.029GB", "MB", "compute.ram", 1029),
+            ("1.5GB", "MiB", "compute.ram", 1431),
+            ("1.4GB", "MiB", "compute.ram", 1335),
+            ("1.029GB", "MiB", "compute.ram", 981),
             ("1.5TB", "GB", "block_storage.gigabytes", 1500),
             ("1.029GB", "GB", "block_storage.gigabytes", 1),
         ],
-        ids=["1.5GB->MB", "1.4GB->MB", "1.029GB->MB", "1.5TB->GB", "1.029GB->GB"],
+        ids=["1.5GB->MiB", "1.4GB->MiB", "1.029GB->MiB", "1.5TB->GB", "1.029GB->GB"],
     )
     def test_fractional_conversion(self, value: str, target: str, field: str, expected: int) -> None:
         result, errors = _parse(value, target, field)
@@ -193,8 +195,8 @@ class TestDecimalVsBinaryDifference:
     def test_decimal_vs_binary_difference(self) -> None:
         decimal_result, _ = _parse("100GB")
         binary_result, _ = _parse("100GiB")
-        assert decimal_result == 100000
-        assert binary_result == 107374
+        assert decimal_result == 95367
+        assert binary_result == 102400
         assert binary_result > decimal_result
 
 
@@ -211,7 +213,7 @@ class TestErrorMessagesQuality:
     )
     def test_error_context(self, label: str, field: str, expected_fragment: str) -> None:
         errors: list[str] = []
-        parse_quota_value("invalid", "MB", field, errors, label)
+        parse_quota_value("invalid", "MiB", field, errors, label)
         assert expected_fragment in errors[0]
 
     def test_error_includes_invalid_value(self) -> None:
