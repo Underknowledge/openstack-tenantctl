@@ -100,14 +100,15 @@ def patched_resources():
         "src.reconciler.find_existing_project",
         "src.reconciler.safety_check",
         "src.reconciler.teardown_project",
-        "src.reconciler.is_project_disabled",
         "src.reconciler.ensure_keystone_groups",
         "src.reconciler.augment_group_role_assignments",
     ]
     with ExitStack() as stack:
         mocks = {t.rsplit(".", 1)[1]: stack.enter_context(patch(t)) for t in targets}
 
-        # Default return values for happy-path scenarios
+        # Default return values for happy-path scenarios.
+        # ensure_project returns (Action, project_id, was_disabled).  Default
+        # was_disabled=False — steady-state present, no unshelve.
         mocks["ensure_project"].return_value = (
             Action(
                 status=ActionStatus.CREATED,
@@ -115,11 +116,10 @@ def patched_resources():
                 name="test_project",
             ),
             "proj-123",
+            False,
         )
         mocks["find_existing_project"].return_value = (None, None)
         mocks["safety_check"].return_value = []
-        # Default: project is not disabled (steady-state present, no unshelve)
-        mocks["is_project_disabled"].return_value = False
         # Default: augment passes through the config unchanged
         mocks["augment_group_role_assignments"].side_effect = lambda cfg: cfg
 
@@ -165,7 +165,7 @@ class TestPresentStatePipeline:
         patched_resources.ensure_keystone_groups.side_effect = track("ensure_keystone_groups")
         patched_resources.ensure_project.side_effect = track(
             "ensure_project",
-            (project_action, "proj-123"),
+            (project_action, "proj-123", True),
         )
         patched_resources.ensure_group_role_assignments.side_effect = track(
             "ensure_group_role_assignments",
@@ -222,7 +222,7 @@ class TestPresentStatePipeline:
             if cfg.name == "project_fail":
                 msg = "Simulated failure"
                 raise Exception(msg)
-            return project_action, "proj-ok-id"
+            return project_action, "proj-ok-id", False
 
         patched_resources.ensure_project.side_effect = ensure_project_side_effect
 
@@ -273,6 +273,7 @@ class TestErrorIsolationContinuesOnFailure:
                     name=cfg.name,
                 ),
                 f"proj-{cfg.name}-id",
+                False,
             )
 
         def track_federation(all_projects, ctx):
@@ -325,7 +326,7 @@ class TestDryRunPropagated:
             resource_type="project",
             name="test_project",
         )
-        patched_resources.ensure_project.return_value = (project_action, "proj-123")
+        patched_resources.ensure_project.return_value = (project_action, "proj-123", False)
 
         reconcile(
             [sample_project_cfg],
@@ -377,6 +378,7 @@ class TestLockedStateDispatch:
         patched_resources.ensure_project.return_value = (
             project_action,
             "proj-locked-id",
+            False,
         )
 
         reconcile([cfg], [cfg], shared_ctx)
@@ -622,6 +624,7 @@ class TestAbsentInconclusiveDoesNotBlockOtherProjects:
                     name=cfg.name,
                 ),
                 f"proj-{cfg.name}-id",
+                False,
             )
 
         patched_resources.ensure_project.side_effect = ensure_project_side_effect
@@ -671,7 +674,7 @@ class TestPresentStatePartialFailure:
             resource_type="project",
             name="test_project",
         )
-        patched_resources.ensure_project.return_value = (project_action, "proj-123")
+        patched_resources.ensure_project.return_value = (project_action, "proj-123", False)
         patched_resources.ensure_network_stack.side_effect = RuntimeError("Network API failure")
 
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
@@ -719,6 +722,7 @@ class TestPresentStatePartialFailure:
                     name="locked_project",
                 ),
                 "proj-locked-id",
+                False,
             )
 
         def track_shelve(cfg, project_id, ctx):
@@ -803,6 +807,7 @@ class TestMixedStatesInSameRun:
                     name=cfg.name,
                 ),
                 f"proj-{cfg.name}-id",
+                False,
             )
 
         patched_resources.ensure_project.side_effect = ensure_project_side_effect
@@ -861,7 +866,7 @@ class TestPresentStateWithEnabledFalse:
             resource_type="project",
             name="test_project",
         )
-        patched_resources.ensure_project.return_value = (project_action, "proj-123")
+        patched_resources.ensure_project.return_value = (project_action, "proj-123", False)
 
         reconcile([cfg_disabled], [cfg_disabled], shared_ctx)
 
@@ -905,7 +910,7 @@ class TestMetadataPersistence:
             resource_type="project",
             name="test_project",
         )
-        patched_resources.ensure_project.return_value = (project_action, "proj-123")
+        patched_resources.ensure_project.return_value = (project_action, "proj-123", False)
 
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
@@ -1007,30 +1012,32 @@ class TestConditionalUnshelve:
 
         patched_resources.unshelve_all_servers.assert_not_called()
 
-    def test_no_state_store_api_disabled_triggers_unshelve(
+    def test_no_state_store_pre_update_disabled_triggers_unshelve(
         self,
         patched_resources: SimpleNamespace,
         shared_ctx: SharedContext,
         sample_project_cfg: ProjectConfig,
     ) -> None:
-        """No state store metadata + API says disabled → unshelve called (fallback)."""
-        # Empty state store (no metadata) → falls through to API check
+        """No state store metadata + ensure_project saw disabled → unshelve called."""
+        # Empty state store (no metadata) → falls through to was_disabled check
         shared_ctx.state_store.load.return_value = {}
-        patched_resources.is_project_disabled.return_value = True
+        action = Action(status=ActionStatus.UPDATED, resource_type="project", name="test")
+        patched_resources.ensure_project.return_value = (action, "proj-123", True)
 
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
         patched_resources.unshelve_all_servers.assert_called_once()
 
-    def test_no_state_store_api_enabled_skips_unshelve(
+    def test_no_state_store_pre_update_enabled_skips_unshelve(
         self,
         patched_resources: SimpleNamespace,
         shared_ctx: SharedContext,
         sample_project_cfg: ProjectConfig,
     ) -> None:
-        """No state store metadata + API says enabled → unshelve skipped."""
+        """No state store metadata + ensure_project saw enabled → unshelve skipped."""
         shared_ctx.state_store.load.return_value = {}
-        patched_resources.is_project_disabled.return_value = False
+        action = Action(status=ActionStatus.SKIPPED, resource_type="project", name="test")
+        patched_resources.ensure_project.return_value = (action, "proj-123", False)
 
         reconcile([sample_project_cfg], [sample_project_cfg], shared_ctx)
 
@@ -1089,6 +1096,7 @@ class TestLastReconciledStatePersistence:
         patched_resources.ensure_project.return_value = (
             project_action,
             "proj-locked-id",
+            False,
         )
 
         reconcile([cfg], [cfg], shared_ctx)
@@ -1378,7 +1386,7 @@ class TestScopedReconciliation:
             resource_type="project",
             name="locked_project",
         )
-        patched_resources.ensure_project.return_value = (project_action, "proj-locked-id")
+        patched_resources.ensure_project.return_value = (project_action, "proj-locked-id", False)
 
         reconcile([cfg], [cfg], shared_ctx, scopes={ReconcileScope.FIPS})
 

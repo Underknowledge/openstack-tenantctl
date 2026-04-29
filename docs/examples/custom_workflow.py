@@ -26,7 +26,7 @@ def provision_with_approval(configs):
     # Phase 1: Create projects only
     pending_approval = []
     for cfg in configs:
-        action, project_id = ensure_project(cfg, ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, ctx)
         if action.status == ActionStatus.CREATED:
             pending_approval.append((cfg, project_id))
             print(f"Created project {cfg.name}, awaiting approval...")
