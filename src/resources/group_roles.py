@@ -103,6 +103,7 @@ def ensure_group_role_assignments(
     group_cache: dict[str, str] = {}
     role_cache: dict[str, str] = {}
 
+    project_label = f"{cfg.name} ({project_id})"
     actions: list[Action] = []
 
     for entry in assignments:
@@ -162,7 +163,7 @@ def ensure_group_role_assignments(
                             "Granted role %s to group %s on project %s",
                             role_name,
                             group_name,
-                            project_id,
+                            project_label,
                         )
                         actions.append(
                             ctx.record(
@@ -189,7 +190,7 @@ def ensure_group_role_assignments(
                             "Revoked role %s from group %s on project %s",
                             role_name,
                             group_name,
-                            project_id,
+                            project_label,
                         )
                         actions.append(
                             ctx.record(

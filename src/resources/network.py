@@ -183,13 +183,14 @@ def ensure_network_stack(
 
     # Safety: check if the project already owns ANY network (name may differ
     # from what we'd create — e.g. legacy name from a previous provisioner).
+    project_label = f"{cfg.name} ({project_id})"
     all_project_nets = list(ctx.conn.network.networks(project_id=project_id))
     if all_project_nets:
         found_names = ", ".join(n.name for n in all_project_nets)
         logger.warning(
             "SAFETY: project %s already has network(s) [%s] but none match "
             "expected name '%s' — skipping to avoid duplicate",
-            project_id,
+            project_label,
             found_names,
             net_name,
         )
