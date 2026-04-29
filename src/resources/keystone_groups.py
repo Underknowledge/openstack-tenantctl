@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from openstack.identity.v3.group import Group
 
 from src.models import ProjectConfig, ProjectState
+from src.models.federation import _normalize_modes
 from src.resources.federation import _derive_group_name
 from src.resources.project import _resolve_domain
 from src.utils import Action, ActionStatus, SharedContext, identity_v3, retry
@@ -58,7 +59,7 @@ def ensure_keystone_groups(
             continue
         domain_id = cfg.domain_id
         for assignment in cfg.federation.role_assignments:
-            if assignment.mode != "group":
+            if "group" not in _normalize_modes(assignment.mode):
                 continue
             ks_group = _derive_group_name(cfg.name, assignment, cfg.federation.group_name_separator)
             if ks_group not in needed:

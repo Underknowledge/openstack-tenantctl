@@ -10,7 +10,7 @@
 #   2. Assigns the listed roles to those groups on this project
 #   3. Generates mapping rules that place IDP users into the groups
 #
-# See config-sample/federation_static_group.json for what the generated
+# See federation_static_group.json for what the generated
 # mapping rules look like.
 
 name: federation-group-demo
@@ -45,3 +45,10 @@ federation:
         - admin
       # Override mode for this entry only: direct project assignment.
       mode: "project"
+    - idp_group: service-account
+      roles:
+        - member
+      # Combined mode: both direct project roles AND group membership.
+      # Useful when application credentials require project-scoped roles
+      # alongside group membership.
+      mode: ["project", "group"]

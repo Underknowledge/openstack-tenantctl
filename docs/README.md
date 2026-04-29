@@ -423,7 +423,7 @@ federation:
   mapping_id: "my-mapping"
   group_prefix: "/services/openstack/"
   user_type: "ephemeral"  # Optional: adds "type" to user element in mapping rules
-  mode: "group"           # Default mode for entries — "project" (default) or "group"
+  mode: "group"           # Default mode — "project" (default), "group", or ["project", "group"]
   role_assignments:
     - idp_group: member
       roles: [member, load-balancer_member]
@@ -431,10 +431,13 @@ federation:
     - idp_group: admin
       roles: [admin]
       mode: "project"     # per-entry override
+    - idp_group: service-account
+      roles: [member]
+      mode: ["project", "group"]  # combined: both elements in one rule
 ```
 
-- **Per-entry mode**: each `role_assignment` entry can use `"project"` or `"group"` mode independently; set a default at the federation level with `mode`
-- `"project"` mode (default) uses `{"projects": [...]}` rules; `"group"` uses `{"group": {...}}` rules — recommended when users need access to multiple projects simultaneously (Keystone accumulates group assignments across rules)
+- **Per-entry mode**: each `role_assignment` entry can use `"project"`, `"group"`, or `["project", "group"]` mode independently; set a default at the federation level with `mode`
+- `"project"` mode (default) uses `{"projects": [...]}` rules; `"group"` uses `{"group": {...}}` rules — recommended when users need access to multiple projects simultaneously (Keystone accumulates group assignments across rules); `["project", "group"]` produces rules with both elements — useful when application credentials require direct project-scoped roles alongside group membership
 - In group mode, tenantctl automatically creates Keystone groups and wires role assignments
 - Rules are ordered deterministically for stable diffs
 - Per-project overrides for `group_prefix`, `role_assignments`, `issuer`, `user_type`, and `mode`

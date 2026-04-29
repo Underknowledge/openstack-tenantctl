@@ -40,7 +40,7 @@ def setup_federated_projects(all_configs: list[ProjectConfig]) -> None:
         # Augment with federation-derived role assignments
         cfg = augment_group_role_assignments(cfg)
 
-        action, project_id = ensure_project(cfg, ctx)
+        action, project_id, _was_disabled = ensure_project(cfg, ctx)
         print(f"  {action.status}: {cfg.name} ({project_id})")
 
         if project_id:
@@ -83,6 +83,30 @@ def example_group_mode_federation() -> None:
                     "role": "member",
                     "mode": "group",
                 },
+            ],
+        ),
+    ]
+
+    setup_federated_projects(configs)
+
+
+def example_combined_mode_federation() -> None:
+    """Example: Combined mode — both project roles and group membership.
+
+    Use ["project", "group"] when application credentials require direct
+    project-scoped roles alongside Keystone group membership.
+    """
+    configs = [
+        ProjectConfig.build(
+            name="app-credentials-project",
+            state="present",
+            domain_id="default",
+            federation=[
+                {
+                    "idp_group": "service-accounts",
+                    "role": "member",
+                    "mode": ["project", "group"],
+                }
             ],
         ),
     ]
