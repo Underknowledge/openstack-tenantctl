@@ -6,6 +6,8 @@
 !.bumpversion.toml
 !.github/
 !.github/**
+!.constraints/
+!.constraints/**
 
 
 # Python

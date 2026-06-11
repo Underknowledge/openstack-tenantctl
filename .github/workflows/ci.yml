@@ -1,6 +1,10 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly latest-deps early warning
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -10,8 +14,63 @@ permissions:
   contents: read
 
 jobs:
-  ci:
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .constraints/gazpacho.txt
+
+      # Type-check against exactly one pinned SDK (newest coordinated
+      # release) so mypy results depend on the commit, not the install date.
+      - run: |
+          python -m venv .venv
+          .venv/bin/pip install -e . -c .constraints/gazpacho.txt
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip show openstacksdk | grep ^Version
+
+      - run: make fmt
+      - run: make lint
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [dalmatian, epoxy, flamingo, gazpacho]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .constraints/${{ matrix.release }}.txt
+
+      # Two-step: runtime deps pinned to what the OpenStack release ships,
+      # then our dev tooling unconstrained (see .constraints/README.md).
+      - run: |
+          python -m venv .venv
+          .venv/bin/pip install -e . -c .constraints/${{ matrix.release }}.txt
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip show openstacksdk | grep ^Version
+
+      - run: make test
+
+  # Unconstrained resolve: catches SDK releases newer than any coordinated
+  # OpenStack release. Non-blocking on pushes/PRs; the weekly cron run fails
+  # loudly so drift gets noticed before it lands in a release's constraints.
+  latest:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ github.event_name != 'schedule' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -24,7 +83,7 @@ jobs:
       - run: |
           python -m venv .venv
           .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip show openstacksdk | grep ^Version
 
-      - run: make fmt
       - run: make lint
       - run: make test

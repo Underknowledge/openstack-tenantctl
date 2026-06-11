@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CONFIG-SCHEMA.md` §`reservations`/§`lifetime` and DD-027/DD-028 written ahead of implementation (now implemented); `USER-GUIDE.md` gains Flavor Reservations and Scheduled Lock or Removal sections
 
 ### CI
+- Test matrix over OpenStack upper-constraints: `.constraints/` carries the official per-release pin lists (dalmatian through gazpacho, the releases shipping openstacksdk within our `>=4.0,<5.0` range), and the test job runs once per release against its exact pinned SDK. Lint/mypy gates on the newest coordinated release (gazpacho, SDK 4.10.0) so type-check results depend on the commit rather than the install date — re-running CI on an old tag now reproduces the environment it was green in. A separate unconstrained `latest` job (non-blocking on pushes/PRs, hard-failing on the weekly cron) surfaces SDK releases newer than any coordinated OpenStack release before they break a tagged build
 - Use `setup-python` built-in pip cache; survives version bumps™
 
 ## [0.6.0] - 2026-04-29
