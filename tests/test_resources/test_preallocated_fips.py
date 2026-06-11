@@ -953,6 +953,121 @@ class TestDriftReconciliation:
         assert new_entry["device_id"] is None
         assert new_entry["device_owner"] is None
 
+    def test_released_fips_pruned_when_address_reclaimed(
+        self,
+        shared_ctx: SharedContext,
+    ) -> None:
+        """A stale released entry is pruned when its address is reclaimed."""
+        existing_released = [
+            {
+                "address": "10.0.0.2",
+                "released_at": "2026-01-01T00:00:00+00:00",
+                "reason": "FIP deleted externally",
+            }
+        ]
+        config_fips = [
+            _fip_entry("id-1", "10.0.0.1"),
+            _fip_entry("id-2", "10.0.0.2"),
+        ]
+        # id-2 gone from OpenStack; reclamation succeeds with the same address.
+        os_fips = [_make_fip("id-1", "10.0.0.1")]
+        shared_ctx.conn.network.create_ip.return_value = _make_fip("id-new", "10.0.0.2")
+
+        raw_fips = [
+            {"id": "id-1", "address": "10.0.0.1"},
+            {"id": "id-2", "address": "10.0.0.2"},
+        ]
+        cfg = _cfg_with_locked(2, raw_fips, released_fips=existing_released, reclaim_floating_ips=True)
+        _reconcile_fip_drift(
+            cfg,
+            "proj-123",
+            shared_ctx,
+            config_fips,
+            os_fips,
+            "ext-net-id-123",
+            "ext-subnet-123",
+        )
+
+        # The reclaimed address is active again → pruned from released_fips.
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
+        assert len(released_writes) == 1
+        assert released_writes[0][0][2] == []
+
+        # preallocated_fips contains the reclaimed address.
+        locked_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["preallocated_fips"]]
+        written_addresses = {f["address"] for f in locked_writes[-1][0][2]}
+        assert "10.0.0.2" in written_addresses
+
+    def test_released_fips_pruned_in_steady_state(
+        self,
+        shared_ctx: SharedContext,
+    ) -> None:
+        """No drift, but a tracked-and-alive address sits in released_fips → pruned."""
+        existing_released = [
+            {
+                "address": "10.0.0.1",
+                "released_at": "2026-01-01T00:00:00+00:00",
+                "reason": "FIP deleted externally",
+            },
+            {
+                "address": "10.0.0.9",
+                "released_at": "2026-01-01T00:00:00+00:00",
+                "reason": "old loss",
+            },
+        ]
+        config_fips = [_fip_entry("id-1", "10.0.0.1")]
+        os_fips = [_make_fip("id-1", "10.0.0.1")]
+
+        raw_fips = [{"id": "id-1", "address": "10.0.0.1"}]
+        cfg = _cfg_with_locked(1, raw_fips, released_fips=existing_released)
+        actions = _reconcile_fip_drift(
+            cfg,
+            "proj-123",
+            shared_ctx,
+            config_fips,
+            os_fips,
+            "ext-net-id-123",
+            "ext-subnet-123",
+        )
+
+        assert actions == []
+
+        # Active 10.0.0.1 pruned; genuinely-gone 10.0.0.9 survives.
+        released_writes = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_fips"]]
+        assert len(released_writes) == 1
+        all_released = released_writes[0][0][2]
+        assert len(all_released) == 1
+        assert all_released[0]["address"] == "10.0.0.9"
+
+    def test_released_fips_no_write_when_unchanged(
+        self,
+        shared_ctx: SharedContext,
+    ) -> None:
+        """No drift and no released entry to prune → released_fips untouched."""
+        existing_released = [
+            {
+                "address": "10.0.0.9",
+                "released_at": "2026-01-01T00:00:00+00:00",
+                "reason": "old loss",
+            }
+        ]
+        config_fips = [_fip_entry("id-1", "10.0.0.1")]
+        os_fips = [_make_fip("id-1", "10.0.0.1")]
+
+        raw_fips = [{"id": "id-1", "address": "10.0.0.1"}]
+        cfg = _cfg_with_locked(1, raw_fips, released_fips=existing_released)
+        _reconcile_fip_drift(
+            cfg,
+            "proj-123",
+            shared_ctx,
+            config_fips,
+            os_fips,
+            "ext-net-id-123",
+            "ext-subnet-123",
+        )
+
+        shared_ctx.state_store.save.assert_not_called()
+
     def test_all_fips_missing_with_reclaim(
         self,
         shared_ctx: SharedContext,

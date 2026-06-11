@@ -499,10 +499,12 @@ def track_router_ips(
     if current != previous:
         _persist_router_ips(cfg, ctx, current)
 
-    # Append new releases to existing audit trail.
-    if new_releases:
-        existing_released = cfg.released_router_ips
-        all_released = [*existing_released, *new_releases]
+    # Reconcile the released audit trail: append new releases, then drop any
+    # entry whose address is active again (router re-adopted / read recovered).
+    # An active address must never appear in released_router_ips.
+    active_addresses = {entry.external_ip for entry in current}
+    all_released = [r for r in [*cfg.released_router_ips, *new_releases] if r.address not in active_addresses]
+    if all_released != cfg.released_router_ips:
         _persist_released_router_ips(cfg, ctx, all_released)
 
     return actions

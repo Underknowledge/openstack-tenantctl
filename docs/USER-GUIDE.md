@@ -431,7 +431,7 @@ config/
 
 1. **`preallocated_fips`**: Pre-allocated floating IPs
 2. **`router_ips`**: Current external IPs assigned to project routers
-3. **`released_fips`** / **`released_router_ips`**: Audit trail of released IPs with timestamps
+3. **`released_fips`** / **`released_router_ips`**: Audit trail of released IPs with timestamps. An address that becomes active again (re-adopted or reclaimed) is removed from the released list, so downstream consumers (e.g. NFS export cleanup) can trust "released" to mean "not currently allocated"
 4. **`metadata`**: Project ID, domain ID, and last reconciliation timestamp
 
 **Purpose**:

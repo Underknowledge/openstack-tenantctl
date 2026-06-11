@@ -896,8 +896,8 @@ def track_router_ips(cfg, project_id, ctx) -> list[Action]:
     # 5. Persist snapshots
     if current != previous:
         write_config(["router_ips"], current)
-    if new_releases:
-        append_config(["released_router_ips"], new_releases)
+    # Merge new releases, then prune addresses that are active again (DD-026)
+    reconcile_released(["released_router_ips"], new_releases, current)
 
     return actions
 ```
@@ -911,7 +911,7 @@ router_ips:
     name: "myproj-router"
     external_ip: "203.0.113.42"
 
-# Audit trail (append-only, never cleared)
+# Audit trail (pruned when an address becomes active again, see DD-026)
 released_router_ips:
   - address: "203.0.113.10"
     router_name: "old-router"
@@ -2669,6 +2669,49 @@ Introduce a `TenantCtl` class (`src/client.py`) as the library entry point, wrap
 
 ---
 
+## DD-026: Released Lists Are Reconciled, Not Append-Only
+
+**Status**: Accepted
+
+### Context
+
+The released lists (`released_router_ips`, `released_fips`) were append-only: entries were never removed once written. Downstream consumers (e.g. an NFS service that removes exports for released IPs) treat the lists as authoritative "this address is gone" signals.
+
+A transient OpenStack API read (empty/partial router list during one run) caused a router to be recorded as released. The router "came back" on a later run with the same UUID — proving the release was a false positive — but the stale released entry remained forever. The state file was self-contradictory: the same address appeared in both `router_ips` (active) and `released_router_ips` (released), and the NFS consumer wrongly removed a live export.
+
+### Decision
+
+Enforce one invariant in the persisted state file: **an address that is currently active (in `router_ips` / `preallocated_fips`) must never appear in the corresponding released list.**
+
+- Each handler's tail write reconciles the released list: merge the run's new releases, then prune any entry whose address is in the final active set.
+- Pruning is **self-healing**: a false-positive release is corrected on the next run, with no operator intervention.
+- Genuinely-gone addresses remain in the released list permanently (the audit trail is preserved).
+- **One released-list write per handler per run**: `ProjectConfig` is frozen at load time, so a second write computed from the stale in-memory released list would clobber entries appended earlier in the same run. The prune therefore lives only at the single tail write of `track_router_ips` and `_reconcile_fip_drift` — notably NOT in `_scale_up_fips` (a pool-reused address self-heals on the next run instead).
+
+### Rationale
+
+The released lists serve two purposes that were in tension: a permanent audit trail and a "safe to clean up" signal for consumers. Append-only semantics serve the first but break the second whenever a release turns out to be false. Pruning only active addresses keeps both: the audit trail loses only entries that were provably wrong.
+
+### Alternatives Considered
+
+**Transient-read guard** (require N consecutive missing observations before releasing) — Rejected: adds state and complexity; pruning makes false releases self-correct anyway, and a one-run-interval false signal was acceptable to the operator.
+
+**Consumer-side cross-check** (consumers ignore released entries whose address is also active) — Rejected: pushes the invariant onto every downstream consumer instead of fixing the state file once at the source.
+
+### Consequences
+
+**Positive**:
+- State files can no longer carry the active/released contradiction; existing contradictions self-heal on the next run
+- Consumers can trust "released" to mean "not currently allocated"
+
+**Negative**:
+- The audit trail is no longer strictly append-only (a pruned false positive leaves no trace)
+- A scale-up that reuses a previously released address is contradictory for one run-interval before the steady-state prune corrects it
+
+**See Also**: DD-011 (Router IP Capture-and-Track), DD-014 (Drift Detection & Reconciliation), DD-018 (Separate State File), DD-019 (Optional FIP Reclamation)
+
+---
+
 ## Summary Table
 
 | ID | Decision | Impact | Related |
@@ -2698,6 +2741,7 @@ Introduce a `TenantCtl` class (`src/client.py`) as the library entry point, wrap
 | DD-023 | Human-Readable Quota Units | Low - User experience | - |
 | DD-024 | Group-Based Federation Mapping Mode | Medium - Federation flexibility | DD-003, DD-008, DD-010, DD-016 |
 | DD-025 | Library Layer Architecture | High - Core architecture | DD-001, DD-006, DD-018, DD-022 |
+| DD-026 | Released Lists Are Reconciled, Not Append-Only | Medium - State consistency | DD-011, DD-014, DD-018, DD-019 |
 
 ---
 

@@ -552,7 +552,7 @@ router_ips:
     name: "myproj-router"
     external_ip: "203.0.113.42"
 
-# Audit trail of released IPs (append-only)
+# Audit trail of released IPs (pruned when an address becomes active again)
 released_router_ips:
   - address: "203.0.113.10"
     router_name: "old-router"
@@ -573,13 +573,21 @@ released_router_ips:
    - **IP changes** (same ID, different IP) → UPDATED action, add old IP to `released_router_ips`
 5. **Persist snapshots to state file**:
    - Update `router_ips` with current snapshot (if changed)
-   - Append new releases to `released_router_ips` (never cleared)
+   - Reconcile `released_router_ips`: append new releases, then prune any entry
+     whose address is active again (an active address must never appear in the
+     released list — see invariant below)
 
 **Key characteristics**:
 
 - **Project-wide tracking**: Tracks ALL routers in the project, not just those created by provisioner
 - **Capture-and-track pattern**: Unlike FIPs (allocate-then-lock), router IPs are allocated by OpenStack when gateway is attached; we just track them
-- **Audit trail**: `released_router_ips` provides permanent record of lost or changed IPs
+- **Audit trail**: `released_router_ips` records lost or changed IPs. Entries are
+  permanent **unless the address becomes active again** (router re-adopted or a
+  transient API read recovered), in which case the stale entry is pruned on the
+  next run. This invariant — *an address in `router_ips` never appears in
+  `released_router_ips`* — lets downstream consumers (e.g. NFS export cleanup)
+  trust "released" to mean "not currently allocated". Same invariant applies to
+  `preallocated_fips` / `released_fips`.
 - **No quota locking**: Router IPs are tied to router lifecycle; no separate quota control
 - **Idempotent**: Running twice with no changes produces no actions (current == previous)
 
@@ -754,6 +762,9 @@ preallocated_fips:
 - **ADOPTED**: Untracked FIP added to state file
 - **RECLAIMED**: Missing FIP reallocated (if `reclaim_floating_ips: true`) and added back to state file
 - **LOST**: Missing FIP could not be reclaimed, moved to `released_fips` audit trail
+- **Released-list invariant**: an address present in `preallocated_fips` is pruned
+  from `released_fips` (a reclaimed or re-adopted address must never read as
+  released; stale entries self-heal on the next run)
 
 **Idempotency**: Once pre-allocated, FIPs are persisted to state file; re-runs skip allocation.
 

@@ -494,6 +494,120 @@ class TestReleasedRouterIpsMerge:
         assert all_released[1]["address"] == "10.0.0.1"
 
 
+class TestReleasedRouterIpsPruneOnReadopt:
+    """An address active in router_ips must be pruned from released_router_ips."""
+
+    def test_steady_state_prunes_stale_release(
+        self,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """Router tracked AND falsely released → only the released list is rewritten."""
+        cfg = dataclasses.replace(
+            sample_project_cfg,
+            config_path="/tmp/project.yaml",
+            state_key="test_project",
+            router_ips=[
+                RouterIpEntry(id="r1", name="router-a", external_ip="10.0.0.1"),
+            ],
+            released_router_ips=[
+                ReleasedRouterIpEntry(
+                    address="10.0.0.1",
+                    router_name="router-a",
+                    released_at="2026-01-01T00:00:00+00:00",
+                    reason="router no longer exists",
+                ),
+            ],
+        )
+        r1 = _make_router("r1", "router-a", "10.0.0.1")
+        shared_ctx.conn.network.routers.return_value = [r1]
+
+        track_router_ips(cfg, "proj-123", shared_ctx)
+
+        # current == previous → no router_ips write.
+        router_ips_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["router_ips"]]
+        assert router_ips_call == []
+
+        # The stale released entry is pruned.
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
+        assert len(released_call) == 1
+        assert released_call[0][0][2] == []
+
+    def test_readopted_router_prunes_release(
+        self,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """Router gone from state but back in OpenStack → adopted and pruned from released."""
+        cfg = dataclasses.replace(
+            sample_project_cfg,
+            config_path="/tmp/project.yaml",
+            state_key="test_project",
+            router_ips=[],
+            released_router_ips=[
+                ReleasedRouterIpEntry(
+                    address="10.0.0.1",
+                    router_name="router-a",
+                    released_at="2026-01-01T00:00:00+00:00",
+                    reason="router no longer exists",
+                ),
+            ],
+        )
+        r1 = _make_router("r1", "router-a", "10.0.0.1")
+        shared_ctx.conn.network.routers.return_value = [r1]
+
+        track_router_ips(cfg, "proj-123", shared_ctx)
+
+        # Router re-adopted into router_ips.
+        router_ips_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["router_ips"]]
+        assert len(router_ips_call) == 1
+        assert router_ips_call[0][0][2] == [{"id": "r1", "name": "router-a", "external_ip": "10.0.0.1"}]
+
+        # Its address no longer appears in released_router_ips.
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
+        assert len(released_call) == 1
+        assert released_call[0][0][2] == []
+
+    def test_inactive_release_survives_prune(
+        self,
+        shared_ctx: SharedContext,
+        sample_project_cfg: ProjectConfig,
+    ) -> None:
+        """A released address that is NOT active stays in the audit trail."""
+        cfg = dataclasses.replace(
+            sample_project_cfg,
+            config_path="/tmp/project.yaml",
+            state_key="test_project",
+            router_ips=[
+                RouterIpEntry(id="r1", name="router-a", external_ip="10.0.0.1"),
+            ],
+            released_router_ips=[
+                ReleasedRouterIpEntry(
+                    address="10.0.0.1",
+                    router_name="router-a",
+                    released_at="2026-01-01T00:00:00+00:00",
+                    reason="router no longer exists",
+                ),
+                ReleasedRouterIpEntry(
+                    address="10.0.0.99",
+                    router_name="old-router",
+                    released_at="2026-01-01T00:00:00+00:00",
+                    reason="router no longer exists",
+                ),
+            ],
+        )
+        r1 = _make_router("r1", "router-a", "10.0.0.1")
+        shared_ctx.conn.network.routers.return_value = [r1]
+
+        track_router_ips(cfg, "proj-123", shared_ctx)
+
+        released_call = [c for c in shared_ctx.state_store.save.call_args_list if c[0][1] == ["released_router_ips"]]
+        assert len(released_call) == 1
+        all_released = released_call[0][0][2]
+        assert len(all_released) == 1
+        assert all_released[0]["address"] == "10.0.0.99"
+
+
 class TestMtuZeroUsesDefault:
     """MTU=0 in config → falls back to 1500 (line 133 in source)."""
 

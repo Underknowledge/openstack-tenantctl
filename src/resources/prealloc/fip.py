@@ -289,6 +289,30 @@ def _persist_released_fips(
     )
 
 
+def _reconcile_released_fips(
+    cfg: ProjectConfig,
+    ctx: SharedContext,
+    active_fips: list[FipEntry],
+    newly_released: list[ReleasedFipEntry],
+) -> None:
+    """Append new releases and drop released entries whose address is active.
+
+    An address present in ``preallocated_fips`` must never also appear in
+    ``released_fips`` — otherwise downstream consumers (e.g. NFS export
+    cleanup) treat a live FIP as removed.
+
+    Args:
+        cfg: Project configuration with the load-time released list.
+        ctx: SharedContext with the state store.
+        active_fips: The final active FIP set for this run.
+        newly_released: Releases recorded during this run (may be empty).
+    """
+    active_addresses = {f.address for f in active_fips}
+    all_released = [r for r in [*cfg.released_fips, *newly_released] if r.address not in active_addresses]
+    if all_released != cfg.released_fips:
+        _persist_released_fips(cfg, ctx, all_released)
+
+
 def _reconcile_fip_drift(
     cfg: ProjectConfig,
     project_id: str,
@@ -360,6 +384,9 @@ def _reconcile_fip_drift(
         _persist_fips(cfg, ctx, updated_config_fips)
 
     if not missing:
+        # Even with nothing adopted, prune released entries whose address is
+        # tracked and alive again (self-heals a false-positive release).
+        _reconcile_released_fips(cfg, ctx, [*config_fips, *adopted], [])
         return actions
 
     logger.warning(
@@ -460,11 +487,9 @@ def _reconcile_fip_drift(
     updated_locked = [*surviving, *reclaimed, *adopted]
     _persist_fips(cfg, ctx, updated_locked)
 
-    # Persist released FIPs (merge with any existing).
-    if newly_released:
-        existing_released = cfg.released_fips
-        all_released = [*existing_released, *newly_released]
-        _persist_released_fips(cfg, ctx, all_released)
+    # Persist released FIPs: merge with any existing, then prune addresses
+    # that are active again (e.g. successfully reclaimed this run).
+    _reconcile_released_fips(cfg, ctx, updated_locked, newly_released)
 
     return actions
 
