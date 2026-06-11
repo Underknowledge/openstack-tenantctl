@@ -554,8 +554,8 @@ class TestTeardownRouterSpecialCases:
 
         # Should remove both interfaces (port3 has no subnet, skipped)
         assert conn.network.remove_interface_from_router.call_count == 2
-        conn.network.remove_interface_from_router.assert_any_call("rtr1-id", subnet_id="subnet1-id")
-        conn.network.remove_interface_from_router.assert_any_call("rtr1-id", subnet_id="subnet2-id")
+        conn.network.remove_interface_from_router.assert_any_call("rtr1-id", "subnet1-id")
+        conn.network.remove_interface_from_router.assert_any_call("rtr1-id", "subnet2-id")
 
     def test_gateway_clear_failure_prevents_router_deletion(
         self, shared_ctx: SharedContext, sample_project_cfg: ProjectConfig

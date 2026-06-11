@@ -2712,6 +2712,95 @@ The released lists serve two purposes that were in tension: a permanent audit tr
 
 ---
 
+## DD-027: Reservation Grants Are State-Tracked, Not Pattern-Owned
+
+**Status**: Accepted (spec only — implementation pending)
+
+### Context
+
+The planned `reservations` feature (CONFIG-SCHEMA.md) grants time-limited access to private flavors matched by exact name or fnmatch wildcard. The first draft of the spec defined ownership by pattern: each run, revoke access to any flavor matching a configured pattern whose periods are all inactive, and never touch flavors matching no pattern.
+
+Pattern ownership has two failure modes:
+
+1. **Manual grants get revoked.** An operator grants `gpu.large` to the project permanently by hand. Any reservation with a `gpu.*` pattern — including one whose period ended years ago and that nothing prompts anyone to remove — re-revokes that manual grant on every run.
+2. **Deleted entries leak grants.** Level-triggered reconciliation only sees current config. Removing an entry while its period is active means no pattern matches the granted flavor anymore, so the access is never revoked. Correct teardown would be an undocumented two-step: first edit the period into the past and run, then delete the entry.
+
+### Decision
+
+Track every grant tenantctl makes in the state file (`granted_flavor_access`), mirroring how `preallocated_fips` records provisioner-created FIPs. Each run computes the active union across all reservation entries and diffs it against tracked grants: grant what is missing, revoke only tracked grants that are no longer covered. Revocations move to a `revoked_flavor_access` audit trail, reconciled like the released IP lists (DD-026).
+
+### Rationale
+
+The state file is already this project's mechanism for "what did tenantctl create" (FIPs, router IPs). Reusing it makes manual grants safe by construction — never tracked, therefore never revoked — makes entry deletion self-healing, and produces an audit trail consistent with `released_fips` and `released_router_ips`.
+
+### Alternatives Considered
+
+**Pattern ownership** (first draft) — Rejected: revokes manual grants that happen to match stale patterns; leaks grants when an entry is deleted while active.
+
+**Marking grants on the flavor itself** (metadata/description tag) — Rejected: flavors are cloud-global resources shared across projects; mutating them from a per-project reconciler is invasive and racy when two projects reserve the same flavor.
+
+### Consequences
+
+**Positive**:
+- Manual flavor access is never touched, even when it matches a reservation pattern
+- Deleting a reservation entry revokes its grants on the next run — no two-step teardown
+- Grant/revoke history is auditable with the same shape as the IP audit trails
+
+**Negative**:
+- A grant made outside state tracking (pre-existing access, lost state file) is invisible to tenantctl and must be revoked manually
+- More state-file churn: every grant and revoke writes state
+
+**See Also**: DD-009 (Config Writeback), DD-014 (Drift Detection & Reconciliation), DD-018 (Separate State File), DD-026 (Released Lists Are Reconciled)
+
+---
+
+## DD-028: Project Lifetime Is a Top-Level Field, Not a Reservation Expiry Action
+
+**Status**: Accepted (spec only — implementation pending)
+
+### Context
+
+The first draft of the reservations spec reserved `on_expiry.project: lock | delete` on reservation entries: when an entry's spans all ended, the project would be locked or torn down. Pre-implementation review found four problems:
+
+1. **Mixed scopes in one mapping.** `on_expiry.instances` is entry-scoped (instances of the flavors the entry covers), but `on_expiry.project` was project-scoped — it ignored the entry's flavors and acted on everything. Writing `on_expiry: {project: lock}` on a GPU reservation reads like "lock the GPU stuff when it ends" but locks the whole project.
+2. **Timer-driven state vs declarative config.** `state` is a config field and reconciliation is level-triggered. After the timer fires, config still says `state: present`. If config wins, `delete` is self-undoing: teardown fires, the next run sees a missing project with `state: present` and recreates it empty. If the timer wins, stored state overrides desired state, contradicting DD-018.
+3. **Lock deadlock.** Locked projects skip reservation reconciliation, so the entry that locked the project would never be evaluated again — extending its period could not un-lock the project.
+4. **List-replacement hazard.** Reservations lists override wholesale on deep-merge. A lifetime bound living inside the list silently disappears when someone adds an unrelated flavor reservation to the project file.
+
+### Decision
+
+Project lifetime is a top-level `lifetime` field: required `until`, required explicit `action: lock | delete` (no default), `confirm_delete: <project name>` for delete, rejected in `defaults.yaml`. Each run computes an **effective state**: the configured `state`, tightened to `locked`/`absent` once `until` has passed, with the ordering `present < locked < absent` — lifetime only ever tightens. The computation runs unconditionally on every run, before any state-dependent skipping, so extending `until` restores the configured state on the next run. `on_expiry` stays reserved on reservation entries with `instances` as its only target.
+
+### Rationale
+
+- A required explicit `action` removes every "when not defined, assume X" interpretation — there is no default consequence to mis-expect.
+- Effective state keeps config the single source of truth: no writeback, no stored timer, no state-file override. The lifetime is just another input to level-triggered convergence and self-heals like everything else, including un-locking when the deadline is extended.
+- A top-level dict deep-merges per key and cannot be lost to list replacement; the "at most one entry may set `on_expiry.project`" validation rule disappears because the shape makes duplicates impossible.
+- `action: delete` reuses `state: absent` teardown semantics including the resources-in-use safety check; a failing timed teardown retries on every run instead of half-firing once.
+
+### Alternatives Considered
+
+**`on_expiry.project` on reservation entries** (first draft) — Rejected for the four problems above.
+
+**Config writeback on fire** (rewrite `state: locked` into the project YAML when the deadline passes) — Rejected: re-introduces the config writeback that DD-018 retired, and a tool editing its own desired state blurs config ownership.
+
+**State-file authoritative lock** (record "locked by timer" in the state file and let it override config) — Rejected: the state file records what tenantctl created (DD-018) and must never override desired state; "config says present but it stays locked" is exactly the debugging surprise this project avoids.
+
+### Consequences
+
+**Positive**:
+- A project deadline is impossible to express accidentally — it requires a dedicated top-level field with an explicit action, and deletion additionally requires naming the project
+- Lock and delete deadlines self-heal through the same level-triggered loop as every other resource
+- Teardown via lifetime revokes tracked flavor grants like any other teardown, leaving no dangling flavor-access entries
+
+**Negative**:
+- When a project should die together with its last reservation, the deadline is written twice (reservation `period` and `lifetime.until`) and can drift apart
+- Effective state must be computed in exactly one place and consulted everywhere state matters; any code path reading raw `state` re-introduces the inconsistency
+
+**See Also**: DD-012 (Project Lifecycle State Machine), DD-014 (Drift Detection & Reconciliation), DD-018 (Separate State File), DD-027 (Reservation Grants Are State-Tracked)
+
+---
+
 ## Summary Table
 
 | ID | Decision | Impact | Related |
@@ -2742,6 +2831,8 @@ The released lists serve two purposes that were in tension: a permanent audit tr
 | DD-024 | Group-Based Federation Mapping Mode | Medium - Federation flexibility | DD-003, DD-008, DD-010, DD-016 |
 | DD-025 | Library Layer Architecture | High - Core architecture | DD-001, DD-006, DD-018, DD-022 |
 | DD-026 | Released Lists Are Reconciled, Not Append-Only | Medium - State consistency | DD-011, DD-014, DD-018, DD-019 |
+| DD-027 | Reservation Grants Are State-Tracked, Not Pattern-Owned | Medium - State management | DD-009, DD-014, DD-018, DD-026 |
+| DD-028 | Project Lifetime Is a Top-Level Field, Not a Reservation Expiry Action | High - State lifecycle | DD-012, DD-014, DD-018, DD-027 |
 
 ---
 

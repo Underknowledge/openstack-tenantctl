@@ -79,7 +79,7 @@ class TestCreateFullStack:
         }
         assert router_kwargs["external_gateway_info"] == expected_gateway
 
-        shared_ctx.conn.network.add_interface_to_router.assert_called_once_with("router-001", subnet_id="subnet-001")
+        shared_ctx.conn.network.add_interface_to_router.assert_called_once_with("router-001", "subnet-001")
 
 
 class TestSkipExistingNetwork:

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+- Released IP lists now self-heal from false releases: a transient API read could mark a live router IP as released, and the append-only released lists kept the stale entry forever — NFS export cleanup then wrongly removed live exports. `track_router_ips` and `_reconcile_fip_drift` now prune released entries whose address is active again (DD-026)
+- Compatibility with openstacksdk ≥ 4.14: `add_interface_to_router`/`remove_interface_from_router` are now called with positional subnet arguments (the SDK renamed `subnet_id`/`port_id` to `subnet`/`port`), keeping the full `>=4.0,<5.0` range working
+
+### Documentation
+- `CONFIG-SCHEMA.md`: specify the planned `reservations` config format ahead of implementation — period syntax (truncated ISO 8601, `from`/`until` ranges, span unions), state-tracked grant semantics, reserved keys (`images`, `on_expiry`) for future phases, and validation rules. Bare periods are limited to day granularity (a bare timestamp would denote a one-second span), unquoted YAML scalars (int years, date objects) are normalized, the `on_expiry` actions are defined consistently with span-union semantics, and the private flavor list is fetched once per run and shared in memory across projects (no cross-run cache — flavors are immutable in Nova, so recreation changes their IDs). Teardown revokes tracked flavor grants instead of skipping reservation reconciliation, so no dangling flavor-access entries survive project deletion
+- `CONFIG-SCHEMA.md`: specify the planned top-level `lifetime` field — `until` deadline plus a required explicit `action: lock | delete` (no default, `confirm_delete: <project name>` for delete, rejected in `defaults.yaml`) that tightens the project's effective state once the deadline passes, evaluated unconditionally each run so extending the deadline self-heals. Replaces the `on_expiry.project` reserved key from the first reservations draft, which mixed entry and project scope, conflicted with declarative `state`, and could deadlock a locked project
+- `DESIGN-DECISIONS.md`: DD-027 — reservation grants are tracked in the state file (`granted_flavor_access`/`revoked_flavor_access`) rather than owned by pattern matching, so manual flavor access is never revoked and deleting a reservation entry self-heals on the next run
+- `DESIGN-DECISIONS.md`: DD-028 — project lifetime is a top-level field with effective-state semantics, not a reservation expiry action
+
 ### CI
 - Use `setup-python` built-in pip cache; survives version bumps™
 

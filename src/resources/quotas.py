@@ -74,7 +74,8 @@ def _ensure_compute_quotas(
         if ctx.dry_run:
             return [ctx.record(ActionStatus.UPDATED, "compute_quota", "", f"would update ({diff})")]
         if diff:
-            ctx.conn.compute.update_quota_set(project_id, **desired)
+            # desired holds quota keys only, never the `user` kwarg mypy worries about.
+            ctx.conn.compute.update_quota_set(project_id, **desired)  # type: ignore[arg-type]
             details = ", ".join(f"{k}={v}" for k, v in sorted(desired.items()))
             logger.info("Updated compute quotas for %s: %s", project_label, details)
             return [

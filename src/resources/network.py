@@ -123,7 +123,8 @@ def _create_router(
 @retry()
 def _add_interface_to_router(conn: Connection, router_id: str, subnet_id: str) -> None:
     """Attach a subnet to a router as an internal interface."""
-    conn.network.add_interface_to_router(router_id, subnet_id=subnet_id)
+    # Positional: the param was renamed subnet_id -> subnet in SDK 4.14.
+    conn.network.add_interface_to_router(router_id, subnet_id)
 
 
 def _find_previous_router_ip(cfg: ProjectConfig, router_name: str) -> str:

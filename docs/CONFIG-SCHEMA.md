@@ -88,11 +88,13 @@ Top-level fields:
 | `description` | string | No | Human-readable description |
 | `enabled` | boolean | No | Whether to provision this project (default: `true`) |
 | `state` | string | No | Project lifecycle state: `"present"` (default), `"locked"`, or `"absent"` |
+| `lifetime` | object | No | Time bound on the project: after `until` passes, the effective state tightens to `locked` or `absent` |
 | `network` | object | Yes | Network configuration |
 | `quotas` | object | Yes | Resource quotas for compute, network, and block storage |
 | `security_group` | object | No | Default security group configuration |
 | `federation` | object | No | Identity federation configuration |
 | `group_role_assignments` | list | No | Keystone group-to-role assignments for the project |
+| `reservations` | list | No | Time-limited access to pre-existing private flavors (later: images, instance expiry actions) |
 | `external_network_name` | string | No | External network for router gateway (default: `"external"`) |
 | `domain_id` | string or null | No | OpenStack domain UUID or name. Set `null` to auto-detect from env vars (default: `null`) |
 | `domain` | string | No | OpenStack domain friendly name (use `domain_id` if both specified) |
@@ -277,6 +279,70 @@ Common workflows:
 - **Decommission**: `present` → `absent` (teardown)
 
 **Important**: When state is `absent`, the provisioner will attempt to delete the project but will fail if any resources are still in use. Clean up all resources manually before setting `state: absent`.
+
+**Interaction with `lifetime`**: a configured [`lifetime`](#lifetime) tightens the effective state once its deadline passes (`present` → `locked` or `absent`). It never loosens an explicitly configured state — see the effective-state ordering under [`lifetime`](#lifetime).
+
+---
+
+### `lifetime`
+
+**Type**: Object (optional)
+
+**Description**: Bounds how long the project lives. Once `until` has passed, the project's **effective state** tightens from the configured `state` to `locked` or `absent`, per `action`. This is the only supported way to put a deadline on a whole project — deliberately a top-level field with a required explicit action, never an implicit consequence of some other setting ([DD-028](DESIGN-DECISIONS.md#dd-028-project-lifetime-is-a-top-level-field-not-a-reservation-expiry-action)).
+
+**Structure**:
+
+```yaml
+lifetime:
+  until: <timestamp>          # REQUIRED: quoted truncated ISO 8601, end of stated span
+  action: <string>            # REQUIRED: lock | delete — there is no default
+  confirm_delete: <string>    # REQUIRED when action is delete: must equal the project name
+```
+
+#### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `until` | string | Yes | Deadline. Same parsing rules as reservation periods (see [Period Syntax](#period-syntax)): resolves to the **end** of its stated span, inclusive — `until: "2026-12"` means through 2026-12-31 23:59:59 UTC. Quote the value |
+| `action` | string | Yes | `lock` or `delete`. Required precisely so an omitted action can never be interpreted as anything — there is no default consequence |
+| `confirm_delete` | string | When `action: delete` | Must equal the project `name`. A timer-driven teardown must not be a one-liner. Rejected when `action: lock` |
+
+#### Effective State
+
+- Each run computes the **effective state**: the configured `state`, tightened by `lifetime` once the current time is past `until` — `action: lock` raises it to at least `locked`, `action: delete` to `absent`. The ordering is `present < locked < absent`; lifetime only ever tightens, never loosens (a project with `state: absent` stays absent regardless of its lifetime).
+- The computation runs **unconditionally on every run**, before any state-dependent skipping. Extending `until` in config therefore restores the configured state on the next run — there is no stored timer, no state writeback, and the config stays the single source of truth, consistent with level-triggered reconciliation.
+- An `until` already in the past takes effect on the first run after the config change: adding a lifetime with a past deadline locks or tears down immediately. Dry-run prints the resolved UTC deadline and the resulting effective state — use it before committing a lifetime change.
+- `action: delete` runs the existing `state: absent` teardown including its safety check: deletion fails while the project still has resources in use, and retries on every subsequent run until the resources are cleaned up or the lifetime is extended.
+
+#### Inheritance
+
+`lifetime` is **rejected in `defaults.yaml`** — per-project only. A fleet-wide deletion timer is never what anyone means, and dict deep-merge would make it worse: a project overriding only `until` would silently inherit `action: delete` from defaults.
+
+#### Validation
+
+- Must be a dict (or omitted) with:
+  - `until`: required; a valid quoted truncated ISO 8601 value (same rules as periods: bare values finer than a day are rejected, unquoted YAML scalars are normalized or rejected)
+  - `action`: required; exactly `lock` or `delete` — an omitted or unknown action is a validation error, never an implicit choice
+  - `confirm_delete`: required and must equal `name` when `action: delete`; rejected when `action: lock`
+  - Unknown keys are rejected
+- Rejected in `defaults.yaml`
+
+**Examples**:
+
+```yaml
+# Trial project: freeze at the end of Q3 2026, keep the data
+name: acme-trial
+lifetime:
+  until: "2026-09-30"
+  action: lock
+
+# Course project: gone after the semester
+name: cs101-spring
+lifetime:
+  until: "2026-07-31"
+  action: delete
+  confirm_delete: cs101-spring
+```
 
 ---
 
@@ -1424,6 +1490,139 @@ group_role_assignments: []
 
 ---
 
+### `reservations`
+
+**Type**: List of objects (optional)
+
+**Description**: Grants time-limited access to pre-existing **private** resources. Each entry pairs a time `period` with what it enables — currently access to private flavors; `images` and `on_expiry` are reserved keys for future phases. While any of an entry's spans is active, the access is granted; outside all spans it is revoked.
+
+**Structure**:
+
+```yaml
+reservations:
+  - name: <string>            # Optional: label used in logs, action messages, and grant tracking
+    period: <period>          # REQUIRED: string, from/until mapping, or list of either
+    flavors:                  # List of flavor names or fnmatch wildcards
+      - <string>
+```
+
+#### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | Label used in logs, action messages, and grant tracking; must be unique within the project if present |
+| `period` | string, object, or list | Yes | When the reservation is active (see Period Syntax) |
+| `flavors` | list of strings | No* | Private flavor names (exact) or fnmatch wildcards (`gpu.*`) to grant access to while active. A bare `*` is rejected |
+| `images` | — | Reserved | Future phase: time-limited image access (rejected until implemented) |
+| `on_expiry` | — | Reserved | Future phase: end-of-period instance actions (rejected until implemented) |
+
+\* At least one grant key (currently only `flavors`) is required — an entry with just a `period` grants nothing and is rejected.
+
+#### Period Syntax
+
+A period is written as truncated ISO 8601. A bare string denotes its **whole stated calendar span**, down to day granularity:
+
+| Value | Meaning |
+|-------|---------|
+| `"2027"` | The whole year 2027 |
+| `"2026-06"` | The whole month of June 2026 |
+| `"2026-06-01"` | The whole day |
+
+Bare values finer than a day are **rejected**: `period: "2026-06-01T09:00:00"` would denote a one-second span — which reads like "starting at 9am" but is never what anyone means. Use a `from`/`until` mapping for time-of-day precision.
+
+An explicit range uses a `from`/`until` mapping. Both accept any truncation down to seconds; `from` resolves to the **start** of its stated span, `until` to the **end** of its stated span (inclusive):
+
+```yaml
+period:
+  from: "2027-03-01"
+  until: "2027-03-07"     # through 2027-03-07 23:59:59
+```
+
+- `from` and `until` are each optional: `{from: "2026-06-01"}` is open-ended forward, `{until: "2026-12-31"}` covers everything up to that date. Omitting both is a validation error.
+- `from` must not resolve to a point after `until` — an inverted range is a validation error.
+- A list mixes both forms; the entry is active during the **union** of all listed spans.
+- Timestamps without a timezone are **UTC**; explicit offsets (e.g. `2026-08-15T08:00:00+02:00`) are allowed. Named timezones are not supported, so a fixed offset does not track DST — prefer UTC, and verify boundaries with dry-run, which prints each reservation's resolved UTC span and whether it is currently active.
+
+**Quote your periods.** YAML types unquoted scalars before tenantctl sees them: `period: 2027` arrives as an integer, `2026-06-01` as a date object, and a full timestamp as a datetime object — only month forms like `2026-06` happen to stay strings. Unambiguous values (integer years, date objects) are normalized to their calendar span; everything else is rejected with an error telling you to quote the value. Quoting sidesteps the whole issue.
+
+#### Enforcement Semantics
+
+- Reconciliation is **level-triggered**, like everything else in tenantctl: each run computes the union of all active spans across all entries, grants access that is missing, and revokes access that tenantctl granted but is no longer covered. There are no one-shot events that can be missed — a skipped run self-heals on the next one.
+- **Grants are state-tracked, not pattern-owned** ([DD-027](DESIGN-DECISIONS.md#dd-027-reservation-grants-are-state-tracked-not-pattern-owned)): every grant tenantctl makes is recorded in the state file (`granted_flavor_access`), and revocation removes only tracked grants. Access granted manually — even to a flavor that matches a reservation pattern — is never touched. Deleting a reservation entry from config revokes its tracked grants on the next run; there is no "expire it first, then delete" dance.
+- Patterns are evaluated against the cloud's private flavors **at run time**: a flavor created next month that matches `gpu.*` gains access on the next run while the reservation is active. Public flavors matching a pattern are skipped (Nova rejects access entries on public flavors).
+- Boundary precision is bounded by run cadence: the format supports seconds, but a boundary takes effect at the next run after it passes. Run the reconciler at least daily for day-granularity periods to behave as operators expect.
+- Revoking flavor access does **not** affect running instances — only new boots and resizes are blocked.
+- **API cost**: the private flavor list is fetched **once per run** and cached in memory across all projects (lazily — only when at least one project defines reservations), since flavors are cloud-global. The cache is not persisted across runs: flavors are immutable in Nova, so changing one means delete-and-recreate with a new ID — a cross-run cache goes stale exactly when it matters. Per-flavor access verification is bounded by tracked grants (one call per granted flavor), not by the cloud's flavor count.
+- Overlapping reservations are a union: access exists while *any* covering entry is active.
+- Projects whose effective state is `locked` skip reservation reconciliation, like network and quota provisioning. Returning to `present` re-converges grants on the next run. Teardown (effective state `absent`) is different: it **revokes all tracked grants** as part of project deletion — skipping there would leave dangling flavor-access entries pointing at a deleted project ID in Nova.
+
+#### Reserved Keys (future phases)
+
+The entry shape is designed to grow without restructuring. These keys are part of the agreed format but rejected by validation until implemented:
+
+- `images`: list of image names or fnmatch wildcards, granted/revoked with the same period and grant-tracking semantics as `flavors`.
+- `on_expiry`: a mapping of **explicit target → action** — never a bare verb, so it is always unambiguous what an action applies to. The only target is `instances`; everything in `on_expiry` is scoped to the entry it sits on. Project-wide consequences are deliberately not expressible here — a deadline on the whole project is the top-level [`lifetime`](#lifetime) field ([DD-028](DESIGN-DECISIONS.md#dd-028-project-lifetime-is-a-top-level-field-not-a-reservation-expiry-action)):
+
+```yaml
+on_expiry:
+  instances: shelve         # shelve | delete | none (default)
+```
+
+  - `instances` acts when access to a flavor/image is actually **revoked** — i.e. no other active entry still covers it, consistent with union semantics — on instances whose *current* flavor lost access (resize moves an instance in or out of scope). An instance covered by two overlapping reservations is untouched until the last covering entry ends.
+
+#### Inheritance
+
+Since lists override in deep-merge, a project that specifies `reservations` **replaces** the defaults list entirely. Because the failure mode here is silent revocation — a defaults-level reservation disappears for every project that defines its own list — **keep reservations in project files only** and do not put them in `defaults.yaml`.
+
+#### Validation
+
+- Must be a list (or omitted)
+- Each entry must be a dict with:
+  - `period`: required; a valid period (see Period Syntax), a `from`/`until` mapping (at least one key, no inverted range), or a non-empty list of either
+  - at least one grant key (`flavors`, for now) — an entry with only `period` is rejected
+  - `name` (if present): non-empty string, unique across the project's entries
+  - `flavors` (if present): non-empty list of non-empty strings; a bare `*` pattern is rejected (it would grant every private flavor in the cloud)
+  - Unknown keys (including the reserved `images` and `on_expiry`) are rejected
+- An entry whose spans all lie in the past logs a notice — it is dead config and should be removed
+- A flavor pattern that matches no private flavor logs a warning when first detected, not on every run (this tool runs on a cadence; repeating the warning is noise)
+
+**Examples**:
+
+```yaml
+# Whole June 2026 on GPU flavors
+reservations:
+  - name: "gpu-june-2026"
+    period: "2026-06"
+    flavors:
+      - "gpu.*"             # fnmatch wildcard
+      - "highmem.xlarge"    # exact name
+
+# First week of March 2027
+reservations:
+  - name: "march-trial"
+    period:
+      from: "2027-03-01"
+      until: "2027-03-07"
+    flavors: ["gpu.*"]
+
+# Same access across several spans
+reservations:
+  - name: "fpga-program"
+    period:
+      - "2027"
+      - "2028-01"
+    flavors: ["fpga-*"]
+
+# Different periods grant different flavors
+reservations:
+  - period: "2026-06"
+    flavors: ["gpu.*"]
+  - period: "2026-07"
+    flavors: ["highmem.*"]
+```
+
+---
+
 ### `external_network_name`
 
 **Type**: String (optional)
@@ -1622,6 +1821,16 @@ The state directory is created automatically on the first provisioning run. Stat
 - Populated when tracked router IPs are no longer present
 - Never automatically cleared — permanent audit trail
 - Structure: List of `{address: <ip>, router_name: <name>, released_at: <timestamp>, reason: <text>}` objects
+
+**`granted_flavor_access`** *(planned — reservations feature)* - Flavor access grants made by tenantctl:
+- One entry per flavor-access grant created by an active reservation
+- Revocation removes only entries from this list — manual grants are never touched ([DD-027](DESIGN-DECISIONS.md#dd-027-reservation-grants-are-state-tracked-not-pattern-owned))
+- Structure: List of `{flavor_id: <uuid>, flavor_name: <name>, reservation: <entry name>, granted_at: <timestamp>}` objects
+
+**`revoked_flavor_access`** *(planned — reservations feature)* - Audit trail of revoked reservation grants:
+- Populated when a tracked grant is no longer covered by any active reservation (period ended or entry removed)
+- Reconciled like the released IP lists (DD-026): an entry is pruned when the same flavor access becomes active again
+- Structure: List of `{flavor_id: <uuid>, flavor_name: <name>, reservation: <entry name>, revoked_at: <timestamp>, reason: <text>}` objects
 
 ### Usage Guidelines
 

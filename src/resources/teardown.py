@@ -82,7 +82,8 @@ def safety_check(conn: Connection, project_id: str, project_name: str) -> list[s
 @retry()
 def _list_volumes(conn: Connection, project_id: str) -> list[Volume]:
     """List all volumes in a project."""
-    return list(conn.block_storage.volumes(details=True, project_id=project_id))
+    # conn.block_storage is typed as a v2|v3 proxy union; we target Cinder v3.
+    return list(conn.block_storage.volumes(details=True, project_id=project_id))  # type: ignore[arg-type]
 
 
 @retry()
@@ -94,7 +95,8 @@ def _list_floating_ips(conn: Connection, project_id: str) -> list[FloatingIP]:
 @retry()
 def _list_snapshots(conn: Connection, project_id: str) -> list[Snapshot]:
     """List all snapshots in a project."""
-    return list(conn.block_storage.snapshots(details=True, project_id=project_id))
+    # conn.block_storage is typed as a v2|v3 proxy union; we target Cinder v3.
+    return list(conn.block_storage.snapshots(details=True, project_id=project_id))  # type: ignore[arg-type]
 
 
 @retry()
@@ -139,7 +141,8 @@ def _delete_snapshot(conn: Connection, snapshot_id: str) -> None:
 
 @retry()
 def _remove_interface(conn: Connection, router_id: str, subnet_id: str) -> None:
-    conn.network.remove_interface_from_router(router_id, subnet_id=subnet_id)
+    # Positional: the param was renamed subnet_id -> subnet in SDK 4.14.
+    conn.network.remove_interface_from_router(router_id, subnet_id)
 
 
 @retry()
