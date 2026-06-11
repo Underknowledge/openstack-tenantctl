@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
+import datetime as dt
 from unittest.mock import MagicMock
 
-from src.models import ProjectConfig
+from src.models import LifetimeConfig, ProjectConfig
 from src.resources.keystone_groups import ensure_keystone_groups
 from src.utils import ActionStatus, SharedContext
 
@@ -173,6 +175,18 @@ class TestEnsureKeystoneGroups:
         created = [a for a in actions if a.status == ActionStatus.CREATED]
         assert len(created) == 1
         assert created[0].name == "proj member"
+
+    def test_lifetime_expired_project_excluded(self, shared_ctx: SharedContext) -> None:
+        """A present project past its lifetime deadline contributes no groups (DD-028)."""
+        cfg = dataclasses.replace(
+            _make_project_cfg("expired", [{"idp_group": "member", "roles": ["member"]}]),
+            lifetime=LifetimeConfig(until=dt.datetime(2020, 1, 1, tzinfo=dt.UTC), action="lock"),
+        )
+
+        actions = ensure_keystone_groups([cfg], shared_ctx)
+
+        assert all(a.status == ActionStatus.SKIPPED for a in actions)
+        shared_ctx.conn.identity.create_group.assert_not_called()
 
     def test_multiple_assignments_multiple_groups(self, shared_ctx: SharedContext) -> None:
         """Each role_assignment produces a distinct group."""

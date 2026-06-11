@@ -1822,12 +1822,12 @@ The state directory is created automatically on the first provisioning run. Stat
 - Never automatically cleared — permanent audit trail
 - Structure: List of `{address: <ip>, router_name: <name>, released_at: <timestamp>, reason: <text>}` objects
 
-**`granted_flavor_access`** *(planned — reservations feature)* - Flavor access grants made by tenantctl:
+**`granted_flavor_access`** - Flavor access grants made by tenantctl:
 - One entry per flavor-access grant created by an active reservation
 - Revocation removes only entries from this list — manual grants are never touched ([DD-027](DESIGN-DECISIONS.md#dd-027-reservation-grants-are-state-tracked-not-pattern-owned))
 - Structure: List of `{flavor_id: <uuid>, flavor_name: <name>, reservation: <entry name>, granted_at: <timestamp>}` objects
 
-**`revoked_flavor_access`** *(planned — reservations feature)* - Audit trail of revoked reservation grants:
+**`revoked_flavor_access`** - Audit trail of revoked reservation grants:
 - Populated when a tracked grant is no longer covered by any active reservation (period ended or entry removed)
 - Reconciled like the released IP lists (DD-026): an entry is pruned when the same flavor access becomes active again
 - Structure: List of `{flavor_id: <uuid>, flavor_name: <name>, reservation: <entry name>, revoked_at: <timestamp>, reason: <text>}` objects

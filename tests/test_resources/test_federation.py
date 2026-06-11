@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 
 import pytest
 
-from src.models import ProjectConfig
+from src.models import LifetimeConfig, ProjectConfig
 from src.resources.federation import (
     _build_generated_rules,
     augment_group_role_assignments,
@@ -490,6 +491,21 @@ class TestProjectStateFiltering:
         projects = [dataclasses.replace(cfg, state=state)]
 
         rules = _build_generated_rules(projects)
+
+        assert rules == []
+
+    def test_lifetime_expired_project_excluded(self) -> None:
+        """A present project past its lifetime deadline loses its rules (DD-028)."""
+        cfg = _make_project_cfg(
+            "expired_proj",
+            [{"idp_group": "member", "roles": ["member"]}],
+        )
+        expired = dataclasses.replace(
+            cfg,
+            lifetime=LifetimeConfig(until=dt.datetime(2020, 1, 1, tzinfo=dt.UTC), action="lock"),
+        )
+
+        rules = _build_generated_rules([expired])
 
         assert rules == []
 

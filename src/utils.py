@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 if TYPE_CHECKING:
+    from openstack.compute.v2.flavor import Flavor
     from openstack.identity.v3._proxy import Proxy as IdentityV3Proxy
     from openstack.network.v2.network import Network
 
@@ -104,6 +105,11 @@ class SharedContext:
     current_project_id: str = ""
     current_project_name: str = ""
     state_store: StateStore | None = None
+    # Private-flavor cache for reservations (DD-006): flavors are cloud-global,
+    # so the list is fetched lazily once per run and shared across projects.
+    # Never persisted across runs — flavors are immutable in Nova, recreation
+    # changes IDs, so a cross-run cache goes stale exactly when it matters.
+    private_flavors: list[Flavor] | None = None
 
     def record(
         self,

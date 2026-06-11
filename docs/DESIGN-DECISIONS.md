@@ -2714,7 +2714,7 @@ The released lists serve two purposes that were in tension: a permanent audit tr
 
 ## DD-027: Reservation Grants Are State-Tracked, Not Pattern-Owned
 
-**Status**: Accepted (spec only — implementation pending)
+**Status**: Accepted (implemented)
 
 ### Context
 
@@ -2756,7 +2756,7 @@ The state file is already this project's mechanism for "what did tenantctl creat
 
 ## DD-028: Project Lifetime Is a Top-Level Field, Not a Reservation Expiry Action
 
-**Status**: Accepted (spec only — implementation pending)
+**Status**: Accepted (implemented)
 
 ### Context
 

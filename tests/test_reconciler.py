@@ -94,6 +94,8 @@ def patched_resources():
         "src.reconciler.ensure_preallocated_network",
         "src.reconciler.ensure_quotas",
         "src.reconciler.ensure_baseline_sg",
+        "src.reconciler.ensure_reservations",
+        "src.reconciler.revoke_all_reservation_grants",
         "src.reconciler.unshelve_all_servers",
         "src.reconciler.shelve_all_servers",
         "src.reconciler.ensure_federation_mapping",
@@ -1565,3 +1567,100 @@ class TestScopeDependencyValidation:
             ReconcileScope.PREALLOC_NETWORK,
             ReconcileScope.NETWORK,
         }
+
+
+class TestLifetimeDispatch:
+    """Effective state (DD-028) drives the reconciler's state dispatch."""
+
+    @staticmethod
+    def _with_lifetime(cfg: ProjectConfig, action: str, until: str) -> ProjectConfig:
+        import dataclasses
+
+        from src.models import LifetimeConfig
+
+        lifetime = LifetimeConfig.from_dict(
+            {
+                "until": until,
+                "action": action,
+                "confirm_delete": cfg.name if action == "delete" else None,
+            }
+        )
+        return dataclasses.replace(cfg, lifetime=lifetime)
+
+    def test_expired_lock_lifetime_runs_locked_pipeline(
+        self,
+        patched_resources: SimpleNamespace,
+        _make_project_cfg,
+    ) -> None:
+        """A present project with an expired lock deadline reconciles as locked."""
+        cfg = self._with_lifetime(_make_project_cfg(), "lock", "2000-12-31")
+        ctx = SharedContext(conn=None, dry_run=False)
+
+        reconcile([cfg], [cfg], ctx)
+
+        patched_resources.shelve_all_servers.assert_called_once()
+        patched_resources.ensure_network_stack.assert_not_called()
+        patched_resources.ensure_reservations.assert_not_called()
+        assert any(
+            a.resource_type == "lifetime" and a.status == ActionStatus.UPDATED and "passed" in a.details
+            for a in ctx.actions
+        )
+
+    def test_expired_delete_lifetime_runs_teardown(
+        self,
+        patched_resources: SimpleNamespace,
+        _make_project_cfg,
+    ) -> None:
+        """A present project with an expired delete deadline reconciles as absent."""
+        cfg = self._with_lifetime(_make_project_cfg(), "delete", "2000-12-31")
+        ctx = SharedContext(conn=None, dry_run=False)
+
+        reconcile([cfg], [cfg], ctx)
+
+        # Offline absent path records a teardown skip; present pipeline never ran.
+        patched_resources.ensure_project.assert_not_called()
+        assert any(a.resource_type == "teardown" for a in ctx.actions)
+
+    def test_unexpired_lifetime_keeps_configured_state(
+        self,
+        patched_resources: SimpleNamespace,
+        _make_project_cfg,
+    ) -> None:
+        cfg = self._with_lifetime(_make_project_cfg(), "lock", "2099-12-31")
+        ctx = SharedContext(conn=None, dry_run=False)
+
+        reconcile([cfg], [cfg], ctx)
+
+        patched_resources.ensure_project.assert_called_once()
+        patched_resources.shelve_all_servers.assert_not_called()
+
+    def test_dry_run_prints_resolved_deadline_and_effective_state(
+        self,
+        patched_resources: SimpleNamespace,
+        _make_project_cfg,
+    ) -> None:
+        cfg = self._with_lifetime(_make_project_cfg(), "lock", "2099-12-31")
+        ctx = SharedContext(conn=None, dry_run=True)
+
+        reconcile([cfg], [cfg], ctx)
+
+        lifetime_actions = [a for a in ctx.actions if a.resource_type == "lifetime"]
+        assert len(lifetime_actions) == 1
+        assert "2099-12-31T23:59:59+00:00" in lifetime_actions[0].details
+        assert "effective state 'present'" in lifetime_actions[0].details
+
+    def test_absent_project_revokes_tracked_grants(
+        self,
+        patched_resources: SimpleNamespace,
+        _make_project_cfg,
+        mock_conn,
+    ) -> None:
+        """Teardown never skips reservation cleanup (DD-027 / DD-028)."""
+        cfg = _make_project_cfg(state="absent")
+        ctx = SharedContext(conn=mock_conn, dry_run=False)
+        patched_resources.find_existing_project.return_value = ("proj-123", "default")
+
+        reconcile([cfg], [cfg], ctx)
+
+        patched_resources.revoke_all_reservation_grants.assert_called_once_with(cfg, "proj-123", ctx)
+        patched_resources.teardown_project.assert_called_once()

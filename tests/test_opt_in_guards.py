@@ -17,6 +17,7 @@ from src.resources.network import ensure_network_stack
 from src.resources.prealloc.fip import ensure_preallocated_fips
 from src.resources.prealloc.network import ensure_preallocated_network
 from src.resources.quotas import ensure_quotas
+from src.resources.reservations import ensure_reservations
 from src.resources.security_group import ensure_baseline_sg
 from src.utils import ActionStatus
 
@@ -69,6 +70,13 @@ if TYPE_CHECKING:
             True,
             id="preallocated_network",
         ),
+        pytest.param(
+            ensure_reservations,
+            "reservations",
+            "reservation",
+            True,
+            id="reservations",
+        ),
     ],
 )
 def test_skips_when_config_section_absent(
@@ -86,6 +94,7 @@ def test_skips_when_config_section_absent(
         "group_role_assignments": [],
         "network": None,
         "quotas": None,
+        "reservations": [],
     }
     cfg = dataclasses.replace(sample_project_cfg, **{key_to_delete: replacement_values[key_to_delete]})
 

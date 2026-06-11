@@ -39,6 +39,8 @@ STATE_KEYS: frozenset[str] = frozenset(
         "released_fips",
         "router_ips",
         "released_router_ips",
+        "granted_flavor_access",
+        "revoked_flavor_access",
     }
 )
 

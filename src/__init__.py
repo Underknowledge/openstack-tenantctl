@@ -43,6 +43,7 @@ from src.resources.prealloc.fip import ensure_preallocated_fips
 from src.resources.prealloc.network import ensure_preallocated_network
 from src.resources.project import ensure_project, find_existing_project
 from src.resources.quotas import ensure_quotas
+from src.resources.reservations import ensure_reservations, revoke_all_reservation_grants
 from src.resources.security_group import ensure_baseline_sg
 from src.state_store import InMemoryStateStore, StateStore, YamlFileStateStore
 from src.utils import (
@@ -87,6 +88,7 @@ __all__ = [
     "ensure_preallocated_network",
     "ensure_project",
     "ensure_quotas",
+    "ensure_reservations",
     "expand_security_group_rules",
     "find_existing_project",
     "find_network",
@@ -97,6 +99,7 @@ __all__ = [
     "resolve_external_subnet",
     "resolve_project_external_network",
     "retry",
+    "revoke_all_reservation_grants",
     "shelve_all_servers",
     "track_router_ips",
     "unshelve_all_servers",

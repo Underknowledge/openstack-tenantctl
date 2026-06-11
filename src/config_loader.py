@@ -221,6 +221,12 @@ def build_projects(
     errors: list[str] = []
     merged_projects: list[dict[str, Any]] = []
 
+    # lifetime is per-project only (DD-028): a fleet-wide deletion timer is
+    # never what anyone means, and deep-merge would let a project overriding
+    # only `until` silently inherit `action: delete` from defaults.
+    if "lifetime" in defaults:
+        errors.append("defaults.yaml: 'lifetime' is rejected in defaults — set it per project")
+
     for rp in raw_projects:
         # Deep-merge: start with a copy of defaults, then merge project on top.
         merged: dict[str, Any] = copy.deepcopy(defaults)

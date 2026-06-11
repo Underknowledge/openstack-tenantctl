@@ -260,6 +260,7 @@ ReconcileScope.FIPS            # Floating IP pre-allocation
 ReconcileScope.PREALLOC_NETWORK  # Pre-allocated network resource
 ReconcileScope.QUOTAS          # Compute/network/storage quotas
 ReconcileScope.SECURITY_GROUPS # Baseline security group
+ReconcileScope.RESERVATIONS    # Time-limited flavor access
 ReconcileScope.KEYSTONE_GROUPS # Keystone group lifecycle
 ReconcileScope.FEDERATION      # Federation mapping
 
@@ -443,6 +444,45 @@ action = ensure_baseline_sg(cfg, project_id, ctx)
 **Behavior:**
 - Non-default SGs: create-once
 - Default SG: additive reconciliation
+
+---
+
+### `ensure_reservations`
+
+Reconcile time-limited private-flavor access from the project's
+`reservations` entries. Grants access covered by an active period, verifies
+and heals tracked grants, and revokes tracked grants no longer covered.
+Only grants recorded in the state file are ever revoked — manual flavor
+access is never touched (DD-027).
+
+```python
+from src import ensure_reservations
+
+actions = ensure_reservations(cfg, project_id, ctx)
+```
+
+**Behavior:**
+- Private flavor list fetched lazily once per run, shared across projects
+  via `SharedContext.private_flavors`
+- Grants tracked in `granted_flavor_access`; revocations audit-trailed in
+  `revoked_flavor_access` (reconciled per DD-026)
+
+**Returns:** `list[Action]`
+
+---
+
+### `revoke_all_reservation_grants`
+
+Revoke every tracked flavor-access grant — used during `state: absent`
+teardown so no dangling access entries survive project deletion.
+
+```python
+from src import revoke_all_reservation_grants
+
+actions = revoke_all_reservation_grants(cfg, project_id, ctx)
+```
+
+**Returns:** `list[Action]`
 
 ---
 

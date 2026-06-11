@@ -8,6 +8,7 @@ the same group name is created only once.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -51,9 +52,12 @@ def ensure_keystone_groups(
     Returns a list of actions taken.
     """
     # Collect unique (group_name, domain_id) pairs across all projects.
+    # Effective state (DD-028): a lifetime-expired project needs no groups,
+    # exactly like a configured locked/absent one.
     needed: dict[str, str] = {}  # group_name -> domain_id
+    now = datetime.now(UTC)
     for cfg in all_projects:
-        if cfg.state != ProjectState.PRESENT:
+        if cfg.effective_state(now) != ProjectState.PRESENT:
             continue
         if not cfg.federation:
             continue

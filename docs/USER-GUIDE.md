@@ -966,6 +966,39 @@ This is opt-in per project (`false` by default in `defaults.yaml`). Projects wit
 
 **Important**: Don't manually edit the state files under `config/state/`. They're managed by the provisioner.
 
+### Flavor Reservations
+
+**Use when**: A project should have access to private flavors (GPU, high-memory, FPGA) only for a limited time — a course, a trial, a compute program.
+
+```yaml
+# config/projects/myproject.yaml
+reservations:
+  - name: "gpu-june-2026"
+    period: "2026-06"          # the whole month — quote your periods!
+    flavors:
+      - "gpu.*"                # fnmatch wildcard
+      - "highmem.xlarge"       # exact name
+
+  - name: "march-trial"
+    period:
+      from: "2027-03-01"
+      until: "2027-03-07"      # inclusive: through 23:59:59 UTC
+    flavors: ["gpu.*"]
+```
+
+**What happens**: while any of an entry's periods is active, the project is granted access to every matching **private** flavor; outside all periods the access is revoked. Reconciliation is level-triggered — a skipped run self-heals on the next one.
+
+**Key behaviors**:
+- Every grant tenantctl makes is tracked in the state file (`granted_flavor_access`). Revocation removes **only tracked grants** — flavor access granted manually is never touched, even when it matches a pattern
+- Deleting a reservation entry from config revokes its tracked grants on the next run
+- Patterns are evaluated at run time: a flavor created next month that matches `gpu.*` gains access on the next run while the reservation is active
+- Revoking access does not affect running instances — only new boots and resizes are blocked
+- Run the reconciler at least daily for day-granularity periods to behave as expected
+- Keep reservations in project files only (lists override wholesale in deep-merge)
+- Dry-run prints each reservation's resolved UTC span and whether it is currently active
+
+See [`reservations` in CONFIG-SCHEMA.md](CONFIG-SCHEMA.md#reservations) for the full period syntax and validation rules. The `images` and `on_expiry` keys are reserved for a future phase and rejected by validation.
+
 ### Project Lifecycle Management
 
 The provisioner provides safe, managed approaches for temporarily disabling or permanently removing projects.
@@ -1057,6 +1090,33 @@ tenantctl --project oldproject -v
 rm config/projects/oldproject.yaml
 ```
 
+#### Scheduled Lock or Removal: lifetime
+
+**Use when**: A project has a known end date (trial, course, fixed-term program) and you want the lock or teardown to happen automatically.
+
+**Configuration**:
+```yaml
+# Freeze at the end of Q3 2026, keep the data
+name: acme-trial
+lifetime:
+  until: "2026-09-30"
+  action: lock
+
+# Gone after the semester — deletion must name the project
+name: cs101-spring
+lifetime:
+  until: "2026-07-31"
+  action: delete
+  confirm_delete: cs101-spring
+```
+
+**What happens**: every run computes the project's **effective state** — the configured `state`, tightened once `until` has passed (`action: lock` → at least `locked`, `action: delete` → `absent`). There is no stored timer: extending `until` in config restores the configured state on the next run, and `action: delete` runs the normal `state: absent` teardown including its safety checks (a blocked teardown retries every run). See [`lifetime` in CONFIG-SCHEMA.md](CONFIG-SCHEMA.md#lifetime).
+
+**Notes**:
+- `action` is required with no default; `confirm_delete` must equal the project name for `delete`
+- `lifetime` is rejected in `defaults.yaml` — per-project only
+- Dry-run prints the resolved UTC deadline and the resulting effective state — use it before committing a lifetime change
+
 #### Safety Checks
 
 **Attempting deletion with servers/volumes present**:
@@ -1076,6 +1136,8 @@ The provisioner **will not proceed** until all servers and volumes are manually 
 |------|---------------|----------|------------|
 | **Temporary disable** | `state: locked` | Shelves VMs, disables project, skips provisioning | ✅ Yes |
 | **Permanent removal** | `state: absent` | Safety-checked deletion of all resources | ❌ No |
+| **Scheduled lock** | `lifetime: {until, action: lock}` | Effective state becomes `locked` once `until` passes | ✅ Yes (extend `until`) |
+| **Scheduled removal** | `lifetime: {until, action: delete, confirm_delete}` | Effective state becomes `absent` once `until` passes | ❌ No (after teardown) |
 | **Stop managing** | Delete YAML file | Provisioner ignores, resources remain in OpenStack | N/A |
 
 ---

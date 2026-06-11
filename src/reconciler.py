@@ -5,10 +5,17 @@ independently (with error isolation) using a state dispatch mechanism,
 followed by a single shared federation-mapping update that considers
 ALL project configs.
 
+Dispatch uses the **effective state** (DD-028): the configured ``state``,
+tightened by an expired ``lifetime`` deadline — computed unconditionally on
+every run via :meth:`ProjectConfig.effective_state`, before any
+state-dependent skipping, so extending ``until`` in config restores the
+configured state on the next run.
+
 Supported states:
 - ``present``: full provisioning (+ unshelve on locked->present transition only)
-- ``locked``: disable project, shelve VMs, skip network/quota/SG
+- ``locked``: disable project, shelve VMs, skip network/quota/SG/reservations
 - ``absent``: safety-checked teardown in reverse dependency order
+  (revokes all tracked flavor-access grants — never skipped)
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from src.resources.project import (
     find_existing_project,
 )
 from src.resources.quotas import ensure_quotas
+from src.resources.reservations import ensure_reservations, revoke_all_reservation_grants
 from src.resources.security_group import ensure_baseline_sg
 from src.resources.teardown import safety_check, teardown_project
 from src.utils import (
@@ -64,6 +72,7 @@ class ReconcileScope(StrEnum):
     PREALLOC_NETWORK = "prealloc_network"
     QUOTAS = "quotas"
     SECURITY_GROUPS = "security_groups"
+    RESERVATIONS = "reservations"
     KEYSTONE_GROUPS = "keystone_groups"
     FEDERATION = "federation"
 
@@ -232,6 +241,8 @@ def _reconcile_present(
         ensure_quotas(cfg, project_id, ctx)
     if _in_scope(ReconcileScope.SECURITY_GROUPS):
         ensure_baseline_sg(cfg, project_id, ctx)
+    if _in_scope(ReconcileScope.RESERVATIONS):
+        ensure_reservations(cfg, project_id, ctx)
 
     if should_unshelve:
         unshelve_all_servers(cfg, project_id, ctx)
@@ -242,7 +253,7 @@ def _reconcile_locked(cfg: ProjectConfig, ctx: SharedContext) -> None:
 
     - Forces ``enabled=False`` on the project.
     - Shelves ACTIVE servers.
-    - Skips network, quota, and security group provisioning.
+    - Skips network, quota, security group, and reservation provisioning.
     - Group role assignments are kept intact.
     """
     # Override enabled to False for locked state.
@@ -305,6 +316,7 @@ def _reconcile_absent(cfg: ProjectConfig, ctx: SharedContext) -> None:
         raise SafetyCheckError(msg)
 
     if ctx.dry_run:
+        revoke_all_reservation_grants(cfg, project_id, ctx)
         ctx.record(
             ActionStatus.DELETED,
             "teardown",
@@ -312,6 +324,10 @@ def _reconcile_absent(cfg: ProjectConfig, ctx: SharedContext) -> None:
             f"would tear down project (id={project_id})",
         )
         return
+
+    # Revoke tracked flavor-access grants before deletion — skipping here
+    # would leave dangling access entries on a deleted project ID in Nova.
+    revoke_all_reservation_grants(cfg, project_id, ctx)
 
     # Revoke all group role assignments before deletion.
     # Mark all assignments as absent so they get revoked.
@@ -383,11 +399,38 @@ def reconcile(
             logger.exception("Failed to ensure Keystone groups: %s", exc)
             ctx.failed_projects.append(_PHASE_KEYSTONE_GROUPS)
 
+    now = datetime.now(UTC)
     for cfg in projects:
         project_name: str = cfg.name
-        state: str = cfg.state
+        # Effective state (DD-028): computed unconditionally on every run,
+        # before any state-dependent skipping — the single dispatch input.
+        state = cfg.effective_state(now)
         logger.info("Reconciling project: %s (state=%s)", project_name, state)
         ctx.current_project_name = project_name
+
+        if cfg.lifetime is not None:
+            deadline = cfg.lifetime.until.isoformat()
+            if state != cfg.state:
+                logger.info(
+                    "Project %s lifetime deadline %s passed — effective state %s (configured %s)",
+                    project_name,
+                    deadline,
+                    state,
+                    cfg.state,
+                )
+                ctx.record(
+                    ActionStatus.UPDATED,
+                    "lifetime",
+                    project_name,
+                    f"deadline {deadline} passed — effective state '{state}' (configured '{cfg.state}')",
+                )
+            elif ctx.dry_run:
+                ctx.record(
+                    ActionStatus.SKIPPED,
+                    "lifetime",
+                    project_name,
+                    f"deadline {deadline} — effective state '{state}'",
+                )
 
         try:
             if state == "present":

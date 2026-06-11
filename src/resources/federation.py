@@ -19,6 +19,7 @@ import dataclasses
 import difflib
 import json
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -70,8 +71,11 @@ def _build_generated_rules(all_projects: list[ProjectConfig]) -> list[dict[str, 
     """
     rules: list[tuple[str, str, dict[str, Any]]] = []
 
+    # Effective state (DD-028): a lifetime-expired project must lose its
+    # mapping rules exactly like a configured locked/absent one.
+    now = datetime.now(UTC)
     for project_cfg in all_projects:
-        if project_cfg.state != ProjectState.PRESENT:
+        if project_cfg.effective_state(now) != ProjectState.PRESENT:
             continue
         project_name: str = project_cfg.name
         federation_cfg = project_cfg.federation

@@ -140,6 +140,10 @@ def mock_conn() -> MagicMock:
     compute.servers = MagicMock(name="servers")
     compute.shelve_server = MagicMock(name="shelve_server")
     compute.unshelve_server = MagicMock(name="unshelve_server")
+    compute.flavors = MagicMock(name="flavors", return_value=[])
+    compute.flavor_add_tenant_access = MagicMock(name="flavor_add_tenant_access")
+    compute.flavor_remove_tenant_access = MagicMock(name="flavor_remove_tenant_access")
+    compute.get_flavor_access = MagicMock(name="get_flavor_access", return_value=[])
     conn.compute = compute
 
     # --- Block-storage proxy ---

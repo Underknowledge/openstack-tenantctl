@@ -95,6 +95,55 @@ class RouterIpEntry:
 
 
 @dataclasses.dataclass(frozen=True)
+class GrantedFlavorAccessEntry:
+    """A flavor-access grant created by an active reservation (DD-027).
+
+    Revocation removes only entries from this list — access granted manually
+    is never tracked and therefore never touched.
+    """
+
+    flavor_id: str
+    flavor_name: str
+    reservation: str
+    granted_at: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GrantedFlavorAccessEntry:
+        """Create from a raw state dict, ignoring unknown keys."""
+        known = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def to_dict(self) -> dict[str, str]:
+        """Return a dict for YAML state persistence."""
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclasses.dataclass(frozen=True)
+class RevokedFlavorAccessEntry:
+    """Audit trail of a revoked reservation grant.
+
+    Reconciled like the released IP lists (DD-026): an entry is pruned when
+    the same flavor access becomes active again.
+    """
+
+    flavor_id: str
+    flavor_name: str
+    reservation: str
+    revoked_at: str
+    reason: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RevokedFlavorAccessEntry:
+        """Create from a raw state dict, ignoring unknown keys."""
+        known = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def to_dict(self) -> dict[str, str]:
+        """Return a dict for YAML state persistence."""
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclasses.dataclass(frozen=True)
 class ReleasedRouterIpEntry:
     """A router IP that was released (router removed or IP changed)."""
 

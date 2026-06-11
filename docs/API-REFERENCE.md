@@ -873,6 +873,7 @@ class ReconcileScope(StrEnum):
     PREALLOC_NETWORK = "prealloc_network"
     QUOTAS = "quotas"
     SECURITY_GROUPS = "security_groups"
+    RESERVATIONS = "reservations"
     KEYSTONE_GROUPS = "keystone_groups"
     FEDERATION = "federation"
 ```
@@ -886,6 +887,7 @@ class ReconcileScope(StrEnum):
 - `PREALLOC_NETWORK`: Pre-allocated network/subnet/router resource (`ensure_preallocated_network`)
 - `QUOTAS`: Compute/network/storage quotas (`ensure_quotas`)
 - `SECURITY_GROUPS`: Baseline security group (`ensure_baseline_sg`)
+- `RESERVATIONS`: Time-limited flavor access (`ensure_reservations`)
 - `KEYSTONE_GROUPS`: Keystone group lifecycle (`ensure_keystone_groups`)
 - `FEDERATION`: Federation mapping (`ensure_federation_mapping`)
 
